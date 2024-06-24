@@ -89,16 +89,16 @@ class VMASTrainer:
 
     def _config_algo(self, algo: str, agent_id: int):
         if algo == 'completely_causal':
-            return CausalAgentVMAS(self.env, {}, self.device, agent_id, n_steps=self.max_steps_env)
+            return CausalAgentVMAS(self.env, {}, self.device, agent_id, n_steps=int(self.max_steps_env/self.max_steps_env))
         elif algo == 'qlearning':
             algo_config = {'learning_rate': 0.0001, 'discount_factor': 0.98, 'epsilon_start': 1.0, 'min_epsilon': 0.05}
-            return QLearningAgent(self.env, self.device, self.max_steps_env, agent_id, algo_config)
+            return QLearningAgent(self.env, self.device, int(self.max_steps_env/self.max_steps_env), agent_id, algo_config)
         elif algo == 'dqn':
             return DQNAgent(self.env, self.device)
         elif algo == 'causal_qlearning':
             algo_config = {'learning_rate': 0.0001, 'discount_factor': 0.98, 'epsilon_start': 1.0, 'min_epsilon': 0.05}
             causality_config = None
-            return QLearningAgent(self.env, self.device, self.max_steps_env, agent_id, algo_config, causality_config)
+            return QLearningAgent(self.env, self.device, int(self.max_steps_env/self.max_steps_env), agent_id, algo_config, causality_config)
         else:
             return RandomAgentVMAS(self.env, self.device, agent_id=agent_id, save_df=False)
 
@@ -145,6 +145,7 @@ class VMASTrainer:
                                         actions[i], initial_time)
 
                 steps += 1
+                observations = next_observations
             for i in range(self.n_agents):
                 rl_knowledge = self.algos[i].return_RL_knowledge()
                 self.dict_metrics[f'agent_{i}']['rl_knowledge'][episode][0] = rl_knowledge
@@ -192,7 +193,7 @@ class VMASTrainer:
                             self.update_metrics(f'agent_{i}', episode, steps, env_n, rewards[f'agent_{i}'][env_n],
                                                 actions[i][env_n], initial_time)
                 steps += 1
-
+                observations = next_observations
                 if steps % 1000 == 0:
                     print(f'{steps}/{self.max_steps_env}')
 
@@ -241,7 +242,6 @@ class VMASTrainer:
         os.makedirs(dir_results, exist_ok=True)
 
         with open(f'{dir_results}/{self.algos[0].name}_{self.observability}.json', 'w') as file:
-            print(self.dict_metrics['agent_0']['rl_knowledge'])
             json.dump(self.dict_metrics, file)
 
 
@@ -260,6 +260,6 @@ def run_simulations(algorithm):
 
 
 if __name__ == '__main__':
-    models = ['qlearning', 'dqn', 'completely_causal', 'random']
+    models = ['completely_causal']
     for model in models:
         run_simulations(model)

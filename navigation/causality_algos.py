@@ -66,7 +66,7 @@ class CausalDiscovery:
             if not if_causal_graph_DAG:
                 print('**** Causal graph is not a DAG ****')
         else:
-            # print(f'\n{self.env_name} - structuring model through NOTEARS... {len(self.df)} timesteps')
+            print(f'\n{self.env_name} - structuring model through NOTEARS... {len(self.df)} timesteps')
             self.notears_graph = from_pandas(self.df, max_iter=2000, use_gpu=True)
             self.notears_graph.remove_edges_below_threshold(0.2)
             largest_component = max(nx.weakly_connected_components(self.notears_graph), key=len)
@@ -281,6 +281,7 @@ class CausalInferenceForRL:
             self.ie = None
 
     def get_rewards_actions_values(self, observation: Dict, online: bool) -> dict:
+        print(observation)
         if self.bn is not None and self.ie is not None:
             print('online bn')
             if online:
@@ -315,7 +316,7 @@ class CausalInferenceForRL:
         num_chunks = multiprocessing.cpu_count()
         chunk_size = len(combinations_list) // num_chunks + 1
         chunks = [combinations_list[i:i + chunk_size] for i in range(0, len(combinations_list), chunk_size)]
-        print(chunks)
+
         with multiprocessing.Pool(processes=num_chunks) as pool:
             results = pool.starmap(process_chunk, [(chunk, self.df, self.causal_graph) for chunk in chunks])
 

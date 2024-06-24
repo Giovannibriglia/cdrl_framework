@@ -110,6 +110,8 @@ class CausalAgentVMAS:
 
         self.continuous_actions = False  # self.env.continuous_actions
 
+        self.if_next_obs_causality = False
+
         self.features = None
         self.obs_features = None
         self.next_obs_features = None
@@ -128,16 +130,15 @@ class CausalAgentVMAS:
 
     def update(self, obs: Tensor = None, action: float = None, reward: float = None, next_obs: Tensor = None):
         if self.online_cd:
-            if self.dict_for_causality is not None:
-                if obs is not None and reward is not None and action is not None and next_obs is not None:
-                    action = action if self.continuous_actions else int(action)
-                    reward = reward.item() if isinstance(reward, torch.Tensor) else reward
-                    self._update_dict(obs, reward, action, next_obs)
-            else:
+            if self.dict_for_causality is None:
                 self._initialize_dict(obs)
 
+            if obs is not None and reward is not None and action is not None and next_obs is not None:
+                action = action if self.continuous_actions else int(action)
+                reward = reward.item() if isinstance(reward, torch.Tensor) else reward
+                self._update_dict(obs, reward, action, next_obs)
+
             if len(self.dict_for_causality[next(iter(self.dict_for_causality))]) > self.steps_for_causality_update:
-                # print('update')
                 dict_detached = detach_dict(self.dict_for_causality)
                 df_causality = pd.DataFrame(dict_detached)
 
@@ -164,15 +165,17 @@ class CausalAgentVMAS:
         self.features = []
         num_sensors = len(observation) - 6  # Subtracting 6 for PX, PY, VX, VY, DX, DY
 
-        """ self.obs_features = [f"agent_{self.agent_id}_{feature}" for feature in
+        self.obs_features = [f"agent_{self.agent_id}_{feature}" for feature in
                              ['PX', 'PY', 'VX', 'VY', 'DX', 'DY'] + [f'sensor{N}' for N in range(num_sensors)]]
-        self.features += self.obs_features"""
-        self.obs_features = None
+        self.features += self.obs_features
         self.features.append(f"agent_{self.agent_id}_reward")
         self.features.append(f"agent_{self.agent_id}_action")
-        self.next_obs_features = [f"agent_{self.agent_id}_next_{feature}" for feature in
-                                  ['PX', 'PY', 'VX', 'VY', 'DX', 'DY'] + [f'sensor{N}' for N in range(num_sensors)]]
-        self.features += self.next_obs_features
+
+        if self.if_next_obs_causality:
+            self.next_obs_features = [f"agent_{self.agent_id}_next_{feature}" for feature in
+                                      ['PX', 'PY', 'VX', 'VY', 'DX', 'DY'] + [f'sensor{N}' for N in range(num_sensors)]]
+            self.features += self.next_obs_features
+
         self.dict_for_causality = {column: [] for column in self.features}
 
     def _update_dict(self, observation, reward, action, next_observation):
@@ -184,13 +187,13 @@ class CausalAgentVMAS:
         if self.obs_features is not None:
             for i, feature in enumerate(self.obs_features):
                 self.dict_for_causality[feature].append(agent_obs[i])
+
         self.dict_for_causality[f"agent_{self.agent_id}_reward"].append(agent_reward)
         self.dict_for_causality[f"agent_{self.agent_id}_action"].append(agent_action)
-        if self.next_obs_features is not None:
+
+        if self.if_next_obs_causality and self.next_obs_features is not None:
             for i, feature in enumerate(self.next_obs_features):
                 self.dict_for_causality[feature].append(agent_next_obs[i])
-
-        # print(len(self.dict_for_causality[next(iter(self.dict_for_causality))]))
 
     def choose_action(self, obs: Dict = None):
         if self.ci is None:
@@ -200,7 +203,7 @@ class CausalAgentVMAS:
             action_chosen = self._epsilon_greedy_choice(rewards_actions_values)
             action = torch.tensor([action_chosen], device=self.device)  # Ensure action is wrapped in a list and tensor
 
-        self.epsilon *= self.epsilon_decay
+        self.epsilon = max(self.min_epsilon, round(self.epsilon * self.epsilon_decay, 5))
 
         return action
 
@@ -217,6 +220,7 @@ class CausalAgentVMAS:
             values = list(reward_action_values.values())
             if all(value == values[0] for value in values):
                 chosen_action = random.choice(list(reward_action_values.keys()))
+                print('causal exploitation: ', reward_action_values, torch.tensor([chosen_action], device=self.device))
             else:
                 chosen_action = max(reward_action_values, key=reward_action_values.get)
                 print('causal exploitation: ', reward_action_values, torch.tensor([chosen_action], device=self.device))
@@ -279,33 +283,58 @@ class QLearningAgent:
         self.q_table = defaultdict(lambda: np.zeros(self.action_space_size))
 
     def _setup_causality(self, causality_config):
-        # TODO: setup offline ci and cd
         self.steps_for_causality_update = causality_config.get('steps_for_update', 1000)
         self.online_cd = causality_config.get('online_cd', True)
         self.online_ci = causality_config.get('online_ci', True)
-        self.df = causality_config.get('online_cd', True)
-        self.causal_graph = causality_config.get('online_cd', True)
+        # df_causality = causality_config.get('df_for_causality', None)
+        # causal_graph = causality_config.get('causal_graph', None)
+        self.causal_table = causality_config.get('causal_table', None)
 
         self.features = None
         self.obs_features = None
         self.next_obs_features = None
         self.dict_for_causality = None
-        self.cd = None
-        self.ci = None
+
+        self.name += '_online_cd' if self.online_cd else '_offline_cd'
+        self.name += '_online_ci' if self.online_ci else '_offline_ci'
+
+        if self.online_cd and self.online_ci:  # online
+            self.cd = None
+            self.ci = None
+        else:  # offline
+            self.cd = None
+            self.ci = None
 
     def choose_action(self, state: Tensor):
-        # TODO: CAUSALITY-INTEGRATION
-        state_tuple = self._state_to_tuple(state)
-        if random.uniform(0, 1) < self.epsilon:
-            # print('exploration')
-            action = random.choice(range(self.action_space_size))
+        if self.online_ci:
+            reward_action_values = self.ci.get_rewards_actions_values(state, self.online_ci)
         else:
-            # print('exploitation')
-            state_action_values = self.q_table[state_tuple]
-            action = np.argmax(state_action_values)
+            # TODO: enter in the causal table
+            reward_action_values = self.causal_table
 
-        action = torch.tensor([action], device=self.device)
-        return action
+        if random.uniform(0.0, self.start_epsilon) < self.epsilon:
+            random_action = next(random.choices(list(reward_action_values.keys()), list(reward_action_values.values()), k=1))
+            print('causal exploration: ', reward_action_values, torch.tensor([random_action], device=self.device))
+            return torch.tensor([random_action], device=self.device)
+        else:
+            # TODO: define "best" actions
+            best_actions = list(reward_action_values.keys())
+            state_tuple = self._state_to_tuple(state)
+            state_action_values = self.q_table[state_tuple]
+
+            if len(best_actions) > 0:
+                mask = np.zeros_like(state_action_values, dtype=bool)
+                mask[best_actions] = True
+                masked_state_action_values = np.where(mask, state_action_values, -np.inf)
+
+                chosen_action = np.argmax(masked_state_action_values)
+            else:
+                chosen_action = np.argmax(state_action_values)
+
+            print('causal exploitation: ', reward_action_values,
+                  torch.tensor([chosen_action], device=self.device))
+
+            return torch.tensor([chosen_action], device=self.device)
 
     def update(self, obs: Tensor = None, action: float = None, reward: float = None, next_obs: Tensor = None):
         if self.if_causality:
@@ -327,7 +356,7 @@ class QLearningAgent:
 
     def _update_causal_knowledge(self, obs: Tensor = None, action: float = None, reward: float = None,
                                  next_obs: Tensor = None):
-        if self.online_cd:
+        if self.online_cd and self.online_ci:
             if self.dict_for_causality is not None:
                 if obs is not None and reward is not None and action is not None and next_obs is not None:
                     action = action if self.continuous_actions else int(action)
@@ -362,7 +391,7 @@ class QLearningAgent:
 
     def _decay_epsilon(self):
         # Decay epsilon
-        self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
+        self.epsilon = max(self.min_epsilon, round(self.epsilon * self.epsilon_decay, 5))
 
     def _state_to_tuple(self, state):
         """Convert tensor state to a tuple to be used as a dictionary key."""
@@ -512,7 +541,7 @@ class DQNAgent:
         self.optimizer.step()
 
         # Decay epsilon
-        self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
+        self.epsilon = max(self.min_epsilon, round(self.epsilon * self.epsilon_decay, 5))
 
     def return_RL_knowledge(self):
         serialized_state_dict = {k: v.tolist() for k, v in self.q_network.state_dict().items()}
