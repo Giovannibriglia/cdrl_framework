@@ -86,6 +86,9 @@ class RandomAgentVMAS:
         df_causality = pd.DataFrame(dict_detached)
         return df_causality
 
+    def return_RL_knowledge(self):
+        return None
+
 
 class CausalAgentVMAS:
     def __init__(self, env: Environment, causality_config: Dict = None, device: str = 'cpu', agent_id: int = 0,
@@ -232,6 +235,9 @@ class CausalAgentVMAS:
 
     def reset_RL_knowledge(self):
         self.epsilon = self.start_epsilon
+
+    def return_RL_knowledge(self):
+        return None
 
 
 class QLearningAgent:
@@ -398,6 +404,13 @@ class QLearningAgent:
 
         # print(len(self.dict_for_causality[next(iter(self.dict_for_causality))]))
 
+    def return_RL_knowledge(self):
+        # Convert the Q-table to a JSON serializable format
+        q_table_json_serializable = {
+            str(k): v.tolist() for k, v in self.q_table.items()
+        }
+        return q_table_json_serializable
+
 
 # Define a namedtuple for Experience Replay
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
@@ -501,8 +514,9 @@ class DQNAgent:
         # Decay epsilon
         self.epsilon = max(self.min_epsilon, self.epsilon * self.epsilon_decay)
 
-    def save(self, filename):
-        torch.save(self.q_network.state_dict(), filename)
+    def return_RL_knowledge(self):
+        serialized_state_dict = {k: v.tolist() for k, v in self.q_network.state_dict().items()}
+        return serialized_state_dict
 
     def load(self, filename):
         self.q_network.load_state_dict(torch.load(filename, map_location=self.device))

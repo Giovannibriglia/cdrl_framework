@@ -42,6 +42,9 @@ class VMASTrainer:
         else:
             self.dict_for_pomdp = None
 
+        self._define_metrics()
+
+    def _define_metrics(self):
         self.dict_metrics = {
             f'agent_{i}': {
                 'env': {
@@ -59,6 +62,7 @@ class VMASTrainer:
                             range(self.n_training_episodes)],
                 'time': [[[[] for _ in range(self.n_environments)] for _ in range(self.max_steps_env)] for _ in
                          range(self.n_training_episodes)],
+                'rl_knowledge': [[[] for _ in range(self.n_environments)] for _ in range(self.n_training_episodes)],
                 'causal_graph': None,
                 'df_causality': None,
                 'causal_table': None
@@ -110,12 +114,13 @@ class VMASTrainer:
         self.save_metrics()
 
         if self.algos[0].name == 'random':
-            df_final = pd.DataFrame()
-            for algo in self.algos:
-                df_new = algo.return_df()
-                df_final = pd.concat([df_final, df_new], axis=1).reset_index(drop=True)
-            df_final.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.pkl')
-            # df_final.to_excel(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.xlsx')
+            if self.algos[0].save_df:
+                df_final = pd.DataFrame()
+                for algo in self.algos:
+                    df_new = algo.return_df()
+                    df_final = pd.concat([df_final, df_new], axis=1).reset_index(drop=True)
+                df_final.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.pkl')
+                # df_final.to_excel(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.xlsx')
 
     def gym_train(self):
         # training process
@@ -141,6 +146,8 @@ class VMASTrainer:
 
                 steps += 1
             for i in range(self.n_agents):
+                rl_knowledge = self.algos[i].return_RL_knowledge()
+                self.dict_metrics[f'agent_{i}']['rl_knowledge'][episode][0] = rl_knowledge
                 self.algos[i].reset_RL_knowledge()
 
     def native_train(self):
@@ -190,6 +197,9 @@ class VMASTrainer:
                     print(f'{steps}/{self.max_steps_env}')
 
             for i in range(self.n_agents):
+                rl_knowledge = self.algos[i].return_RL_knowledge()
+                for env_n in range(self.n_environments):
+                    self.dict_metrics[f'agent_{i}']['rl_knowledge'][episode][env_n] = rl_knowledge
                 self.algos[i].reset_RL_knowledge()
 
     def trainer_step(self, actions: List, observations: Tensor, episode: int):
@@ -231,24 +241,25 @@ class VMASTrainer:
         os.makedirs(dir_results, exist_ok=True)
 
         with open(f'{dir_results}/{self.algos[0].name}_{self.observability}.json', 'w') as file:
+            print(self.dict_metrics['agent_0']['rl_knowledge'])
             json.dump(self.dict_metrics, file)
 
 
-def run_simulations():
+def run_simulations(algorithm):
     n_episodes = 10
     n_agents = 4
-    max_steps_env = 10000
+    max_steps_env = 20000
     n_environments = 10
     observabilities = ['mdp', 'pomdp']
-    algorithms = ['qlearning', 'dqn', 'completely_causal', 'random']
     for observability in observabilities:
-        for algorithm in algorithms:
-            print(f'*** {algorithm} ***')
-            trainer = VMASTrainer(env_wrapper=None, n_training_episodes=n_episodes, rendering=False, n_agents=n_agents,
-                                  n_environments=n_environments,
-                                  algo_name=algorithm, max_steps_env=max_steps_env, observability=observability)
-            trainer.train()
+        print(f'*** {algorithm} - {observability} ***')
+        trainer = VMASTrainer(env_wrapper=None, n_training_episodes=n_episodes, rendering=False, n_agents=n_agents,
+                              n_environments=n_environments,
+                              algo_name=algorithm, max_steps_env=max_steps_env, observability=observability)
+        trainer.train()
 
 
-
-
+if __name__ == '__main__':
+    models = ['qlearning', 'dqn', 'completely_causal', 'random']
+    for model in models:
+        run_simulations(model)
