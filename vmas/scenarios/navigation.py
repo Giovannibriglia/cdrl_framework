@@ -263,31 +263,31 @@ class Scenario(BaseScenario):
         if kind == 'reward':
             max_value = 0.1
             min_value = self.agent_collision_penalty - max(self.x_semidim, self.y_semidim)*2
-            n = 100
+            n = 20
             intervals = create_intervals(min_value, max_value, n, scale='exponential')
             # print('reward bins: ', n)
         elif kind == 'DX' or kind == 'DY':
             max_value = 0
             min_value = -self.x_semidim*2 if kind == 'DX' else -self.y_semidim*2
-            n = int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
+            n = 20 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
             intervals = create_intervals(min_value, max_value, n, scale='exponential')
             # print('DX-DY bins: ', n)
         elif kind == 'VX' or kind == 'VY':
             max_value = 1
             min_value = -1
-            n = int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
+            n = 10 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
             intervals = create_intervals(min_value, max_value, n, scale='exponential')
             # print('VX-VY bins: ', n)
         elif kind == 'sensor':
             max_value = 1
             min_value = 0
-            n = 100
+            n = 20
             intervals = create_intervals(min_value, max_value, n, scale='exponential')
             # print('sensor bins: ', n)
         elif kind == 'posX' or kind == 'posY':
             max_value = self.x_semidim*2 if kind == 'posX' else self.y_semidim*2
             min_value = -self.x_semidim*2 if kind == 'posX' else -self.y_semidim*2
-            n = int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'posX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
+            n = 20 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'posX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
             intervals = create_intervals(min_value, max_value, n, scale='exponential')
             # print('posX-posY bins: ', n)
 

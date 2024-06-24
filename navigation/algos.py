@@ -200,6 +200,7 @@ class CausalAgentVMAS:
             action = self._random_action_choice()
         else:
             rewards_actions_values = self.ci.get_rewards_actions_values(obs, self.online_ci)
+            print(rewards_actions_values)
             action_chosen = self._epsilon_greedy_choice(rewards_actions_values)
             action = torch.tensor([action_chosen], device=self.device)  # Ensure action is wrapped in a list and tensor
 
@@ -283,6 +284,8 @@ class QLearningAgent:
         self.q_table = defaultdict(lambda: np.zeros(self.action_space_size))
 
     def _setup_causality(self, causality_config):
+        self.if_next_obs_causality = False
+
         self.steps_for_causality_update = causality_config.get('steps_for_update', 1000)
         self.online_cd = causality_config.get('online_cd', True)
         self.online_ci = causality_config.get('online_ci', True)
@@ -306,15 +309,18 @@ class QLearningAgent:
             self.ci = None
 
     def choose_action(self, state: Tensor):
-        if self.online_ci:
-            reward_action_values = self.ci.get_rewards_actions_values(state, self.online_ci)
+        if self.if_causality:
+            if self.online_ci:
+                reward_action_values = self.ci.get_rewards_actions_values(state, self.online_ci)
+            else:
+                # TODO: enter in the causal table
+                reward_action_values = self.causal_table
         else:
-            # TODO: enter in the causal table
-            reward_action_values = self.causal_table
+            reward_action_values = {key: 1/self.action_space_size for key in range(self.action_space_size)}
 
         if random.uniform(0.0, self.start_epsilon) < self.epsilon:
-            random_action = next(random.choices(list(reward_action_values.keys()), list(reward_action_values.values()), k=1))
-            print('causal exploration: ', reward_action_values, torch.tensor([random_action], device=self.device))
+            random_action = random.choices(list(reward_action_values.keys()), weights=list(reward_action_values.values()), k=1)[0]
+            # print('causal exploration: ', reward_action_values, torch.tensor([random_action], device=self.device))
             return torch.tensor([random_action], device=self.device)
         else:
             # TODO: define "best" actions
@@ -331,8 +337,8 @@ class QLearningAgent:
             else:
                 chosen_action = np.argmax(state_action_values)
 
-            print('causal exploitation: ', reward_action_values,
-                  torch.tensor([chosen_action], device=self.device))
+            #print('causal exploitation: ', reward_action_values,
+            #      torch.tensor([chosen_action], device=self.device))
 
             return torch.tensor([chosen_action], device=self.device)
 
@@ -405,15 +411,17 @@ class QLearningAgent:
         self.features = []
         num_sensors = len(observation) - 6  # Subtracting 6 for PX, PY, VX, VY, DX, DY
 
-        """ self.obs_features = [f"agent_{self.agent_id}_{feature}" for feature in
+        self.obs_features = [f"agent_{self.agent_id}_{feature}" for feature in
                              ['PX', 'PY', 'VX', 'VY', 'DX', 'DY'] + [f'sensor{N}' for N in range(num_sensors)]]
-        self.features += self.obs_features"""
-        self.obs_features = None
+        self.features += self.obs_features
         self.features.append(f"agent_{self.agent_id}_reward")
         self.features.append(f"agent_{self.agent_id}_action")
-        self.next_obs_features = [f"agent_{self.agent_id}_next_{feature}" for feature in
-                                  ['PX', 'PY', 'VX', 'VY', 'DX', 'DY'] + [f'sensor{N}' for N in range(num_sensors)]]
-        self.features += self.next_obs_features
+
+        if self.if_next_obs_causality:
+            self.next_obs_features = [f"agent_{self.agent_id}_next_{feature}" for feature in
+                                      ['PX', 'PY', 'VX', 'VY', 'DX', 'DY'] + [f'sensor{N}' for N in range(num_sensors)]]
+            self.features += self.next_obs_features
+
         self.dict_for_causality = {column: [] for column in self.features}
 
     def _update_dict(self, observation, reward, action, next_observation):
@@ -425,13 +433,13 @@ class QLearningAgent:
         if self.obs_features is not None:
             for i, feature in enumerate(self.obs_features):
                 self.dict_for_causality[feature].append(agent_obs[i])
+
         self.dict_for_causality[f"agent_{self.agent_id}_reward"].append(agent_reward)
         self.dict_for_causality[f"agent_{self.agent_id}_action"].append(agent_action)
-        if self.next_obs_features is not None:
+
+        if self.if_next_obs_causality and self.next_obs_features is not None:
             for i, feature in enumerate(self.next_obs_features):
                 self.dict_for_causality[feature].append(agent_next_obs[i])
-
-        # print(len(self.dict_for_causality[next(iter(self.dict_for_causality))]))
 
     def return_RL_knowledge(self):
         # Convert the Q-table to a JSON serializable format
