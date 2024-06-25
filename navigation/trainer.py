@@ -115,11 +115,12 @@ class VMASTrainer:
 
         if self.algos[0].name == 'random':
             if self.algos[0].save_df:
+                dir_save = f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline'
                 df_final = pd.DataFrame()
                 for algo in self.algos:
                     df_new = algo.return_df()
                     df_final = pd.concat([df_final, df_new], axis=1).reset_index(drop=True)
-                df_final.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.pkl')
+                df_final.to_pickle(f'{dir_save}/df_random_{self.observability}_{len(df_final)}.pkl')
                 # df_final.to_excel(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.xlsx')
 
     def gym_train(self):
@@ -194,7 +195,7 @@ class VMASTrainer:
                                                 actions[i][env_n], initial_time)
                 steps += 1
                 observations = next_observations
-                if steps % 1000 == 0:
+                if steps % int(self.max_steps_env/20) == 0:
                     print(f'{steps}/{self.max_steps_env}')
 
             for i in range(self.n_agents):
@@ -246,9 +247,9 @@ class VMASTrainer:
 
 
 def run_simulations(algorithm):
-    n_episodes = 10
+    n_episodes = 1
     n_agents = 4
-    max_steps_env = 20000
+    max_steps_env = 100000
     n_environments = 10
     observabilities = ['mdp', 'pomdp']
     for observability in observabilities:
@@ -260,6 +261,6 @@ def run_simulations(algorithm):
 
 
 if __name__ == '__main__':
-    models = ['completely_causal']
+    models = ['random']
     for model in models:
         run_simulations(model)

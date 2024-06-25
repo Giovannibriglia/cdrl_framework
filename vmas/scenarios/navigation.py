@@ -237,7 +237,7 @@ class Scenario(BaseScenario):
     " ********************************************************************************************************** "
     def _rescale_value(self, kind: str, value: float|int):
 
-        def discretize_value(value, intervals):
+        """def discretize_value(value, intervals):
             # Find the interval where the value fits
             for i in range(len(intervals) - 1):
                 if intervals[i] <= value < intervals[i + 1]:
@@ -246,7 +246,17 @@ class Scenario(BaseScenario):
             if value < intervals[0]:
                 return intervals[0]
             elif value >= intervals[-1]:
-                return intervals[-1]
+                return intervals[-1]"""
+
+        def discretize_value(value, intervals):
+            # it returns the index of the interval where the value fits.
+            for i in range(len(intervals) - 1):
+                if intervals[i] <= value < intervals[i + 1]:
+                    return i
+            if value < intervals[0]:
+                return 0
+            elif value >= intervals[-1]:
+                return len(intervals) - 2
 
         def create_intervals(min_val, max_val, n_intervals, scale='linear'):
             if scale == 'exponential':
@@ -291,8 +301,10 @@ class Scenario(BaseScenario):
             intervals = create_intervals(min_value, max_value, n, scale='exponential')
             # print('posX-posY bins: ', n)
 
-        new_value = discretize_value(value, intervals)
-        return new_value
+        index = discretize_value(value, intervals)
+        rescaled_value = int((index / (len(intervals) - 2)) * (n - 1))
+        # print(kind, value, n, rescaled_value)
+        return rescaled_value
     " ********************************************************************************************************** "
 
     def observation(self, agent: Agent):
