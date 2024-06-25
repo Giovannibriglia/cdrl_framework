@@ -116,6 +116,7 @@ class VMASTrainer:
         if self.algos[0].name == 'random':
             if self.algos[0].save_df:
                 dir_save = f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline'
+                os.makedirs(dir_save, exist_ok=True)
                 df_final = pd.DataFrame()
                 for algo in self.algos:
                     df_new = algo.return_df()
