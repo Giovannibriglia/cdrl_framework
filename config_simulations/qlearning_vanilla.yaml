@@ -3,7 +3,7 @@
   'task': 'navigation'
   'n_episodes': 10
   'n_agents': 4
-  'max_steps_env': 1000
+  'max_steps_env': 200
   'n_environments': 1
   'observability': 'mdp' # 'pomdp'
 
@@ -14,10 +14,10 @@
   'discount_factor': 0.98
   'min_epsilon': 0.05
 
-'causality_config':
-  'batch_timestep_update': 500
-  'online_cd': True
-  'online_ci': True
+#'causality_config':
+  #'batch_timestep_update': 1000
+  #'online_cd': True
+  #'online_ci': True
   #'df_for_causality':
   # 'causal_graph':
   # 'causal_table':

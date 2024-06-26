@@ -75,22 +75,37 @@ def IQM_mean_std(data: list) -> tuple:
 
 
 def compute_iqm_and_std_for_agent(agent_data, metric_key):
-    iqm_list = []
-    iqm_std_list = []
+    episode_iqm_means = []
+    episode_iqm_stds = []
 
+    # Iterate through each episode
     for episode in range(len(agent_data[metric_key])):
+        timestep_data = {}
+
+        # Collect data for each timestep across all environments within the current episode
         for step in range(len(agent_data[metric_key][episode])):
             for env in range(len(agent_data[metric_key][episode][step])):
                 data_series = agent_data[metric_key][episode][step][env]
+                if step not in timestep_data:
+                    timestep_data[step] = []
                 if data_series:
-                    iqm_mean, iqm_std = IQM_mean_std(data_series)
-                    iqm_list.append(iqm_mean)
-                    iqm_std_list.append(iqm_std)
+                    timestep_data[step].append(data_series)
 
-    agent_iqm_mean = np.mean(iqm_list)
-    agent_iqm_std = np.mean(iqm_std_list)
+        mean_list = []
 
-    return agent_iqm_mean, agent_iqm_std
+        # Compute the mean for each timestep in the current episode
+        for step, data_series_list in timestep_data.items():
+            combined_data = [value for series in data_series_list for value in series]
+            if combined_data:
+                mean_list.append(np.mean(combined_data))
+
+        # Compute IQM and STD for the current episode
+        if mean_list:
+            episode_iqm_mean, episode_iqm_std = IQM_mean_std(mean_list)
+            episode_iqm_means.append(episode_iqm_mean)
+            episode_iqm_stds.append(episode_iqm_std)
+
+    return episode_iqm_means, episode_iqm_stds
 
 
 " ******************************************************************************************************************** "

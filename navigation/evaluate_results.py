@@ -13,11 +13,11 @@ def main(path_metrics):
             'iqm_mean': agent_iqm_mean,
             'iqm_std': agent_iqm_std
         }
-    mean = 0
+    """mean = 0
     for agent_key, results in agent_iqm_results.items():
         mean += results['iqm_mean']
         print(f"Agent {agent_key}: IQM Mean = {results['iqm_mean']}, IQM Std = {results['iqm_std']}")
-    print(mean / 4)
+    print(mean / 4)"""
 
 
 if __name__ == '__main__':

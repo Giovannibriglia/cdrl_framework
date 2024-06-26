@@ -204,7 +204,7 @@ class Causality:
 
     def action_filter(self, obs: Tensor) -> Dict:
         if self.ci is None:
-            return {key: 1 / len(self.action_space_size) for key in range(self.action_space_size)}
+            return {key: 1 / self.action_space_size for key in range(self.action_space_size)}
         else:
             return self.ci.get_rewards_actions_values(obs, self.online_ci)
 
@@ -252,7 +252,6 @@ class QLearningAgent:
 
     def _setup_causality(self, causality_config):
         self.causality_obj = Causality(self.env, causality_config, self.agent_id)
-        print('causalty setupped')
 
     def choose_action(self, state: Tensor):
         if self.if_causality:
