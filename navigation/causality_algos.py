@@ -235,7 +235,7 @@ class CausalDiscovery:
 
 
 class CausalInferenceForRL:
-    def __init__(self, df: pd.DataFrame, causal_graph: StructureModel, causal_table: pd.DataFrame = None):
+    def __init__(self, df: pd.DataFrame = None, causal_graph: StructureModel = None, causal_table: pd.DataFrame = None):
 
         self.action_space_size = None
         self.action_column = None
@@ -249,7 +249,8 @@ class CausalInferenceForRL:
         self.bn = None
         self.causal_graph = None
 
-        self.add_data(df, causal_graph)
+        if self.causal_graph is not None and self.df is not None:
+            self.add_data(df, causal_graph)
 
     def add_data(self, new_df: pd.DataFrame, new_graph: StructureModel):
         if self.df is None:
@@ -282,28 +283,26 @@ class CausalInferenceForRL:
 
     def get_rewards_actions_values(self, observation: Dict, online: bool) -> dict:
         print(observation)
-        if self.bn is not None and self.ie is not None:
-            print('online bn')
-            if online:
+        if online:  # online causal inference
+            if self.bn is not None and self.ie is not None:
+                print('online bn')
                 reward_action_values = inference_function(observation, self.ie, self.possible_reward_values,
                                                           self.reward_column, self.action_column)
-
                 return reward_action_values
             else:
-                filtered_df = self.causal_table.copy()
-                for feature, value in observation.items():
-                    filtered_df = filtered_df[filtered_df[feature] == value]
+                uniform_prob = 1 / self.action_space_size
+                return {key: uniform_prob for key in range(self.action_space_size)}
+        else:  # offline causal inference
+            filtered_df = self.causal_table.copy()
+            for feature, value in observation.items():
+                filtered_df = filtered_df[filtered_df[feature] == value]
 
-                if not filtered_df.empty:
-                    reward_action_values = filtered_df['reward_action_values'].values[0]
-                else:
-                    print('No reward-action values for this observation are available')
-                    reward_action_values = {}
-
-                return reward_action_values
-        else:
-            uniform_prob = round(1 / self.action_space_size, 5)
-            return {key: uniform_prob for key in range(self.action_space_size)}
+            if not filtered_df.empty:
+                return filtered_df['reward_action_values'].values[0]
+            else:
+                print('No reward-action values for this observation are available')
+                uniform_prob = 1 / self.action_space_size
+                return {key: uniform_prob for key in range(self.action_space_size)}
 
     def create_causal_table(self) -> pd.DataFrame:
         features = self.df.columns.to_list()

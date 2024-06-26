@@ -1,31 +1,25 @@
 import os
 import json
-from typing import List
+from typing import List, Dict
 import pandas as pd
+import yaml
 from vmas import make_env
 from path_repo import GLOBAL_PATH_REPO
 from torch import Tensor
 import time
-from navigation.algos import RandomAgentVMAS, CausalAgentVMAS, QLearningAgent, DQNAgent
+from navigation.algos_new import RandomAgentVMAS, QLearningAgent, DQNAgent
 import torch
 from vmas.simulator.environment import Wrapper
 from tqdm.auto import tqdm
 
 
 class VMASTrainer:
-    def __init__(self, n_training_episodes: int = 1, n_environments: int = 1, n_agents: int = 4,
-                 algo_name: str = 'only_causal', env_wrapper: Wrapper | None = Wrapper.GYM, rendering: bool = False,
-                 x_semidim: float = 0.5, y_semidim: float = 0.5, max_steps_env: int = None, observability: str = 'mdp',
-                 seed: int = 42):
-        self.n_training_episodes = n_training_episodes
-        self.n_environments = n_environments
-        self.n_agents = n_agents
+    def __init__(self, simulation_config: Dict = None, algo_config: Dict = None, causality_config: Dict = None,
+                 env_wrapper: Wrapper | None = None, rendering: bool = False, seed: int = 42):
+
+        self.observability = simulation_config.get('observability', 'mdp')
         self.env_wrapper = env_wrapper
         self.if_render = rendering
-        self.x_semidim = x_semidim
-        self.y_semidim = y_semidim
-        self.max_steps_env = max_steps_env
-        self.observability = observability
         self.seed = seed
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -33,9 +27,11 @@ class VMASTrainer:
 
         if self.env_wrapper == self.gym_wrapper:
             self.n_environments = 1
+        else:
+            self.n_environments = int(simulation_config.get('n_environments', 10))
 
-        self.env = self.config_env()
-        self.algos = self.config_algos(algo_name)
+        self.env = self._config_env(simulation_config)
+        self.algos = self._config_algos(algo_config, causality_config)
 
         if self.observability == 'pomdp':
             self.dict_for_pomdp = {'state': None, 'reward': None, 'next_state': None}
@@ -69,10 +65,17 @@ class VMASTrainer:
             } for i in range(self.n_agents)
         }
 
-    def config_env(self):
+    def _config_env(self, simulation_config: Dict = None):
+        self.n_training_episodes = int(simulation_config.get('n_episodes', 10))
+        self.n_agents = int(simulation_config.get('n_agents', 10))
+        self.scenario = str(simulation_config.get('task', 'navigation'))
+        self.max_steps_env = int(simulation_config.get('max_steps_env', 20000))
+        self.x_semidim = float(simulation_config.get('x_semidim', 0.5))
+        self.y_semidim = float(simulation_config.get('y_semidim', 0.5))
+
         print('Device: ', self.device)
         env = make_env(
-            scenario='navigation',
+            scenario=self.scenario,
             num_envs=self.n_environments,
             device=self.device,
             continuous_actions=False,
@@ -87,44 +90,29 @@ class VMASTrainer:
         )
         return env
 
-    def _config_algo(self, algo: str, agent_id: int):
-        if algo == 'completely_causal':
-            return CausalAgentVMAS(self.env, {}, self.device, agent_id, n_steps=int(self.max_steps_env/self.max_steps_env))
-        elif algo == 'qlearning':
-            algo_config = {'learning_rate': 0.0001, 'discount_factor': 0.98, 'epsilon_start': 1.0, 'min_epsilon': 0.05}
-            return QLearningAgent(self.env, self.device, int(self.max_steps_env/self.max_steps_env), agent_id, algo_config)
-        elif algo == 'dqn':
-            return DQNAgent(self.env, self.device)
-        elif algo == 'causal_qlearning':
-            algo_config = {'learning_rate': 0.0001, 'discount_factor': 0.98, 'epsilon_start': 1.0, 'min_epsilon': 0.05}
-            causality_config = None
-            return QLearningAgent(self.env, self.device, int(self.max_steps_env/self.max_steps_env), agent_id, algo_config, causality_config)
+    def _config_algo(self, agent_id: int, algo_config: Dict = None, causality_config: Dict = None):
+        algo_name = algo_config.get('name', 'random')
+        if algo_name == 'qlearning':
+            return QLearningAgent(self.env, self.device, int(self.max_steps_env / self.max_steps_env), agent_id,
+                                  algo_config, causality_config)
+        elif algo_name == 'dqn':
+            return DQNAgent(self.env, self.device, int(self.max_steps_env / self.max_steps_env), agent_id,
+                            algo_config, causality_config)
         else:
             return RandomAgentVMAS(self.env, self.device, agent_id=agent_id, save_df=False)
 
-    def config_algos(self, algo_name: str):
-        return [self._config_algo(algo_name, i) for i in range(self.n_agents)]
+    def _config_algos(self, algo_config: Dict = None, causality_config: Dict = None):
+        return [self._config_algo(i, algo_config, causality_config) for i in range(self.n_agents)]
 
     def train(self):
         if self.env_wrapper is None:
-            self.native_train()
+            self._native_train()
         elif self.env_wrapper == self.gym_wrapper:
-            self.gym_train()
+            self._gym_train()
 
-        self.save_metrics()
+        self._save_metrics()
 
-        if self.algos[0].name == 'random':
-            if self.algos[0].save_df:
-                dir_save = f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline'
-                os.makedirs(dir_save, exist_ok=True)
-                df_final = pd.DataFrame()
-                for algo in self.algos:
-                    df_new = algo.return_df()
-                    df_final = pd.concat([df_final, df_new], axis=1).reset_index(drop=True)
-                df_final.to_pickle(f'{dir_save}/df_random_{self.observability}_{len(df_final)}.pkl')
-                # df_final.to_excel(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.xlsx')
-
-    def gym_train(self):
+    def _gym_train(self):
         # training process
         pbar = tqdm(range(self.n_training_episodes), desc='Training...')
         for episode in pbar:
@@ -136,24 +124,27 @@ class VMASTrainer:
             while not done:
                 actions = [self.algos[i].choose_action(observations[f'agent_{i}']) for i in range(self.n_agents)]
                 actions = [tensor.item() for tensor in actions]
-                next_observations, rewards, done, info = self.trainer_step(actions, observations, episode)
+                next_observations, rewards, done, info = self._trainer_step(actions, observations, episode)
                 if self.if_render:
                     self.env.render()
                 for i in range(self.n_agents):
                     self.algos[i].update(observations[f'agent_{i}'], actions[i], rewards[f'agent_{i}'],
                                          next_observations[f'agent_{i}'])
 
-                    self.update_metrics(f'agent_{i}', episode, steps, 0, rewards[f'agent_{i}'],
-                                        actions[i], initial_time)
+                    self._update_metrics(f'agent_{i}', episode, steps, 0, rewards[f'agent_{i}'],
+                                         actions[i], initial_time)
 
                 steps += 1
                 observations = next_observations
+
             for i in range(self.n_agents):
                 rl_knowledge = self.algos[i].return_RL_knowledge()
                 self.dict_metrics[f'agent_{i}']['rl_knowledge'][episode][0] = rl_knowledge
                 self.algos[i].reset_RL_knowledge()
 
-    def native_train(self):
+            self._save_metrics()
+
+    def _native_train(self):
         pbar = tqdm(range(self.n_training_episodes), desc='Training...')
 
         for episode in pbar:
@@ -172,7 +163,7 @@ class VMASTrainer:
                          range(self.n_environments)]
                         for i in range(self.n_agents)]
 
-                next_observations, rewards, dones, info = self.trainer_step(actions, observations, episode)
+                next_observations, rewards, dones, info = self._trainer_step(actions, observations, episode)
                 if self.if_render:
                     self.env.render()
 
@@ -182,8 +173,8 @@ class VMASTrainer:
                                              rewards[f'agent_{i}'][0],
                                              next_observations[f'agent_{i}'][0])
 
-                        self.update_metrics(f'agent_{i}', episode, steps, 0, rewards[f'agent_{i}'][0], actions[i][0],
-                                            initial_time)
+                        self._update_metrics(f'agent_{i}', episode, steps, 0, rewards[f'agent_{i}'][0], actions[i][0],
+                                             initial_time)
 
                     else:
                         for env_n in range(self.n_environments):
@@ -192,11 +183,12 @@ class VMASTrainer:
                                                  rewards[f'agent_{i}'][env_n],
                                                  next_observations[f'agent_{i}'][env_n])
 
-                            self.update_metrics(f'agent_{i}', episode, steps, env_n, rewards[f'agent_{i}'][env_n],
-                                                actions[i][env_n], initial_time)
+                            self._update_metrics(f'agent_{i}', episode, steps, env_n, rewards[f'agent_{i}'][env_n],
+                                                 actions[i][env_n], initial_time)
                 steps += 1
                 observations = next_observations
-                if steps % int(self.max_steps_env/20) == 0:
+
+                if steps % int(self.max_steps_env / 10) == 0:
                     print(f'{steps}/{self.max_steps_env}')
 
             for i in range(self.n_agents):
@@ -205,7 +197,9 @@ class VMASTrainer:
                     self.dict_metrics[f'agent_{i}']['rl_knowledge'][episode][env_n] = rl_knowledge
                 self.algos[i].reset_RL_knowledge()
 
-    def trainer_step(self, actions: List, observations: Tensor, episode: int):
+            self._save_metrics()
+
+    def _trainer_step(self, actions: List, observations: Tensor, episode: int):
         next_observations, rewards, done, info = self.env.step(actions)
 
         if self.observability == 'mdp':
@@ -229,8 +223,8 @@ class VMASTrainer:
 
             return next_observations_relative, rewards_relative, done, info
 
-    def update_metrics(self, agent_key: str, episode_idx: int, step_idx: int, env_idx: int, reward_value: float = None,
-                       action_value: float = None, initial_time_value: float = None):
+    def _update_metrics(self, agent_key: str, episode_idx: int, step_idx: int, env_idx: int, reward_value: float = None,
+                        action_value: float = None, initial_time_value: float = None):
         if reward_value is not None:
             self.dict_metrics[agent_key]['rewards'][episode_idx][step_idx][env_idx].append(float(reward_value))
         if action_value is not None:
@@ -239,29 +233,47 @@ class VMASTrainer:
             self.dict_metrics[agent_key]['time'][episode_idx][step_idx][env_idx].append(
                 time.time() - initial_time_value)
 
-    def save_metrics(self):
+    def _save_metrics(self):
         dir_results = f'{GLOBAL_PATH_REPO}/navigation/results'
         os.makedirs(dir_results, exist_ok=True)
 
         with open(f'{dir_results}/{self.algos[0].name}_{self.observability}.json', 'w') as file:
             json.dump(self.dict_metrics, file)
 
+        if self.algos[0].name == 'random':
+            if self.algos[0].save_df:
+                dir_save = f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline'
+                os.makedirs(dir_save, exist_ok=True)
+                df_final = pd.DataFrame()
+                for algo in self.algos:
+                    df_new = algo.return_df()
+                    df_final = pd.concat([df_final, df_new], axis=1).reset_index(drop=True)
+                df_final.to_pickle(f'{dir_save}/df_random_{self.observability}_{len(df_final)}.pkl')
+                # df_final.to_excel(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.xlsx')
 
-def run_simulations(algorithm):
-    n_episodes = 1
-    n_agents = 4
-    max_steps_env = 100000
-    n_environments = 10
-    observabilities = ['mdp', 'pomdp']
-    for observability in observabilities:
-        print(f'*** {algorithm} - {observability} ***')
-        trainer = VMASTrainer(env_wrapper=None, n_training_episodes=n_episodes, rendering=False, n_agents=n_agents,
-                              n_environments=n_environments,
-                              algo_name=algorithm, max_steps_env=max_steps_env, observability=observability)
-        trainer.train()
+
+def run_simulations(path_yaml_config: str):
+    with open(f'{path_yaml_config}.yaml', 'r') as file:
+        config = yaml.safe_load(file)
+
+    simulation_config = config.get('simulation_config')
+    algo_config = config.get('algo_config')
+    causality_config = config.get('causality_config', None)
+
+    task = simulation_config.get('task', 'navigation')
+    observability = simulation_config.get('observability', 'mdp')
+    algorithm_name = algo_config.get('name', 'random')
+
+    if causality_config is not None:
+        algorithm = f'causal_{algorithm_name}'
+        algorithm += '_online' if causality_config.get('online_ci', True) else '_offline'
+
+    print(f'*** {task} - {algorithm_name} - {observability} ***')
+    trainer = VMASTrainer(simulation_config=simulation_config, algo_config=algo_config,
+                          causality_config=causality_config, rendering=False)
+    trainer.train()
 
 
 if __name__ == '__main__':
-    models = ['random']
-    for model in models:
-        run_simulations(model)
+    path_file = f'{GLOBAL_PATH_REPO}/config_simulations/causal_qlearning_online'
+    run_simulations(path_file)

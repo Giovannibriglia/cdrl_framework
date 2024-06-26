@@ -1,5 +1,6 @@
 from decimal import Decimal
-
+from typing import Dict
+import random
 import numpy as np
 import torch
 from causalnex.structure import StructureModel
@@ -93,3 +94,11 @@ def compute_iqm_and_std_for_agent(agent_data, metric_key):
 
 
 " ******************************************************************************************************************** "
+
+def _state_to_tuple(state):
+    """Convert tensor state to a tuple to be used as a dictionary key."""
+    return tuple(state.cpu().numpy())
+
+
+def exploration_action(reward_action_values: Dict) -> int:
+    return random.choices(list(reward_action_values.keys()), weights=list(reward_action_values.values()), k=1)[0]
