@@ -1,6 +1,8 @@
 from decimal import Decimal
 from typing import Dict
 import random
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from causalnex.structure import StructureModel
@@ -66,15 +68,16 @@ def IQM_mean_std(data: list) -> tuple:
     within_iqr_indices = np.where((sorted_data >= lower_bound) & (sorted_data <= upper_bound))[0]
 
     # Calculate IQM (Interquartile Mean)
-    iq_mean = Decimal(np.mean(sorted_data[within_iqr_indices])).quantize(Decimal('0.01'))
+    iq_mean = Decimal(np.mean(sorted_data[within_iqr_indices])).quantize(Decimal('0.001'))
 
     # Calculate IQM standard deviation (IQM_std)
-    iq_std = Decimal(np.std(sorted_data[within_iqr_indices])).quantize(Decimal('0.01'))
+    iq_std = Decimal(np.std(sorted_data[within_iqr_indices])).quantize(Decimal('0.001'))
 
     return iq_mean, iq_std
 
 
 def compute_iqm_and_std_for_agent(agent_data, metric_key):
+    episode_mean_series = []
     episode_iqm_means = []
     episode_iqm_stds = []
 
@@ -90,7 +93,6 @@ def compute_iqm_and_std_for_agent(agent_data, metric_key):
                     timestep_data[step] = []
                 if data_series:
                     timestep_data[step].append(data_series)
-
         mean_list = []
 
         # Compute the mean for each timestep in the current episode
@@ -99,16 +101,24 @@ def compute_iqm_and_std_for_agent(agent_data, metric_key):
             if combined_data:
                 mean_list.append(np.mean(combined_data))
 
+        episode_mean_series.append(mean_list)
+
         # Compute IQM and STD for the current episode
         if mean_list:
             episode_iqm_mean, episode_iqm_std = IQM_mean_std(mean_list)
             episode_iqm_means.append(episode_iqm_mean)
-            episode_iqm_stds.append(episode_iqm_std)
+
+    avg_mean_series = np.mean(np.array(episode_mean_series), axis=0).tolist()
+
+    fig = plt.figure(dpi=500, figsize=(16, 9))
+    plt.plot(avg_mean_series)
+    plt.show()
 
     return episode_iqm_means, episode_iqm_stds
 
 
 " ******************************************************************************************************************** "
+
 
 def _state_to_tuple(state):
     """Convert tensor state to a tuple to be used as a dictionary key."""

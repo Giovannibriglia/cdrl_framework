@@ -72,6 +72,7 @@ class VMASTrainer:
         self.max_steps_env = int(simulation_config.get('max_steps_env', 20000))
         self.x_semidim = float(simulation_config.get('x_semidim', 0.5))
         self.y_semidim = float(simulation_config.get('y_semidim', 0.5))
+        self.n_sensors = int(simulation_config.get('n_sensors', 12))
 
         print('Device: ', self.device)
         env = make_env(
@@ -86,20 +87,22 @@ class VMASTrainer:
             n_agents=self.n_agents,
             x_semidim=self.x_semidim,
             y_semidim=self.y_semidim,
-            max_steps=self.max_steps_env
+            max_steps=self.max_steps_env,
+            n_sensors=self.n_sensors
         )
         return env
 
     def _config_algo(self, agent_id: int, algo_config: Dict = None, causality_config: Dict = None):
-        algo_name = algo_config.get('name', 'random')
+        algo_name = str(algo_config.get('name', 'random'))
+
         if algo_name == 'qlearning':
-            return QLearningAgent(self.env, self.device, int(self.max_steps_env / self.max_steps_env), agent_id,
+            return QLearningAgent(self.env, self.device, int(self.max_steps_env / self.n_environments), agent_id,
                                   algo_config, causality_config)
         elif algo_name == 'dqn':
-            return DQNAgent(self.env, self.device, int(self.max_steps_env / self.max_steps_env), agent_id,
+            return DQNAgent(self.env, self.device, int(self.max_steps_env / self.n_environments), agent_id,
                             algo_config, causality_config)
         else:
-            return RandomAgentVMAS(self.env, self.device, agent_id=agent_id, save_df=False)
+            return RandomAgentVMAS(self.env, self.device, agent_id=agent_id, algo_config=algo_config)
 
     def _config_algos(self, algo_config: Dict = None, causality_config: Dict = None):
         return [self._config_algo(i, algo_config, causality_config) for i in range(self.n_agents)]
@@ -252,8 +255,8 @@ class VMASTrainer:
                 # df_final.to_excel(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.xlsx')
 
 
-def run_simulations(path_yaml_config: str):
-    with open(f'{path_yaml_config}.yaml', 'r') as file:
+def run_simulations(path_yaml_config: str, if_rendering: bool = False):
+    with open(f'{path_yaml_config}', 'r') as file:
         config = yaml.safe_load(file)
 
     simulation_config = config.get('simulation_config')
@@ -270,10 +273,10 @@ def run_simulations(path_yaml_config: str):
 
     print(f'*** {task} - {algorithm_name} - {observability} ***')
     trainer = VMASTrainer(simulation_config=simulation_config, algo_config=algo_config,
-                          causality_config=causality_config, rendering=False)
+                          causality_config=causality_config, rendering=if_rendering)
     trainer.train()
 
 
 if __name__ == '__main__':
-    path_file = f'{GLOBAL_PATH_REPO}/config_simulations/causal_qlearning_online'
-    run_simulations(path_file)
+    path_file = f'{GLOBAL_PATH_REPO}/config_simulations/causal_qlearning_online.yaml'
+    run_simulations(path_file, False)

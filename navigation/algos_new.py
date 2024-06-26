@@ -16,13 +16,13 @@ EXPLORATION_GAME_PERCENT = 0.7
 
 
 class RandomAgentVMAS:
-    def __init__(self, env, device, seed: int = 42, agent_id: int = 0, save_df: bool = False):
+    def __init__(self, env, device, seed: int = 42, agent_id: int = 0, algo_config: Dict = None):
         self.env = env
         self.name = 'random'
         self.device = device
         self.agent_id = agent_id
-        self.save_df = save_df
-        self.dict_for_causality = None
+        self.save_df = algo_config.get('save_df', False)
+        self.dict_for_storing = None
         self.continuous_actions = False
 
         np.random.seed(seed)
@@ -39,7 +39,7 @@ class RandomAgentVMAS:
 
     def update(self, state: Tensor, action: Tensor, reward: Tensor, next_state: Tensor):
         if self.save_df:
-            if self.dict_for_causality is None:
+            if self.dict_for_storing is None:
                 self._initialize_dict(state)
 
             action = action if self.continuous_actions else int(action)
@@ -62,7 +62,7 @@ class RandomAgentVMAS:
         self.next_obs_features = [f"agent_{self.agent_id}_next_{feature}" for feature in
                                   ['PX', 'PY', 'VX', 'VY', 'DX', 'DY'] + [f'sensor{N}' for N in range(num_sensors)]]
         self.features += self.next_obs_features
-        self.dict_for_causality = {column: [] for column in self.features}
+        self.dict_for_storing = {column: [] for column in self.features}
 
     def _update_dict(self, observation, reward, action, next_observation):
         agent_obs = observation.cpu().numpy()
@@ -72,19 +72,19 @@ class RandomAgentVMAS:
 
         if self.obs_features is not None:
             for i, feature in enumerate(self.obs_features):
-                self.dict_for_causality[feature].append(agent_obs[i])
-        self.dict_for_causality[f"agent_{self.agent_id}_reward"].append(agent_reward)
-        self.dict_for_causality[f"agent_{self.agent_id}_action"].append(agent_action)
+                self.dict_for_storing[feature].append(agent_obs[i])
+        self.dict_for_storing[f"agent_{self.agent_id}_reward"].append(agent_reward)
+        self.dict_for_storing[f"agent_{self.agent_id}_action"].append(agent_action)
         if self.next_obs_features is not None:
             for i, feature in enumerate(self.next_obs_features):
-                self.dict_for_causality[feature].append(agent_next_obs[i])
+                self.dict_for_storing[feature].append(agent_next_obs[i])
 
         # print(len(self.dict_for_causality[next(iter(self.dict_for_causality))]))
 
     def return_df(self):
-        dict_detached = detach_dict(self.dict_for_causality)
-        df_causality = pd.DataFrame(dict_detached)
-        return df_causality
+        dict_detached = detach_dict(self.dict_for_storing)
+        df = pd.DataFrame(dict_detached)
+        return df
 
     def return_RL_knowledge(self):
         return None
@@ -206,7 +206,9 @@ class Causality:
         if self.ci is None:
             return {key: 1 / self.action_space_size for key in range(self.action_space_size)}
         else:
-            return self.ci.get_rewards_actions_values(obs, self.online_ci)
+            reward_action_values = self.ci.get_rewards_actions_values(obs, self.online_ci)
+            print(reward_action_values)
+            return reward_action_values
 
 
 class QLearningAgent:
@@ -234,7 +236,7 @@ class QLearningAgent:
             self.name = f'causal_{name}'
             self.online_causality = causality_config.get('online_ci', True)
             self.name += '_online' if self.online_causality else '_offline'
-            self.if_causality = True
+            self.if_causality = True if self.agent_id == 0 else False
             self._setup_causality(causality_config)
 
         self.scenario = scenario
@@ -247,7 +249,6 @@ class QLearningAgent:
         self.epsilon = self.start_epsilon
         self.min_epsilon = float(algo_config.get('min_epsilon', 0.05))
         self.epsilon_decay = 1 - (-np.log(self.min_epsilon) / (EXPLORATION_GAME_PERCENT * self.n_steps))
-
         self.q_table = defaultdict(lambda: np.zeros(self.action_space_size))
 
     def _setup_causality(self, causality_config):
@@ -261,22 +262,21 @@ class QLearningAgent:
 
         if random.uniform(0.0, 1.0) < self.epsilon:
             random_action = exploration_action(reward_action_values)
+            # print('exploration', reward_action_values, random_action)
             return torch.tensor([random_action], device=self.device)
         else:
             # TODO: define "best" actions
-            best_actions = list(reward_action_values.keys())
-            state_tuple = _state_to_tuple(state)
-            state_action_values = self.q_table[state_tuple]
-
-            if len(best_actions) > 0:
+            """if len(best_actions) > 0:
                 mask = np.zeros_like(state_action_values, dtype=bool)
                 mask[best_actions] = True
                 masked_state_action_values = np.where(mask, state_action_values, -np.inf)
 
                 chosen_action = np.argmax(masked_state_action_values)
-            else:
-                chosen_action = np.argmax(state_action_values)
-
+            else:"""
+            state_tuple = _state_to_tuple(state)
+            state_action_values = self.q_table[state_tuple]
+            chosen_action = np.argmax(state_action_values)
+            # print('exploitation', reward_action_values, chosen_action)
             return torch.tensor([chosen_action], device=self.device)
 
     def update(self, obs: Tensor = None, action: float = None, reward: float = None, next_obs: Tensor = None):

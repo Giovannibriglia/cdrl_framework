@@ -1,21 +1,12 @@
-- file setup con stefano
+# TODO:
+    1) Run simulations with 4 agents, 1m timesteps, 1 episode, without discretization where you store the the dataframe
+        sensitive analysis; on this perform causal discovery: 10-20-50-100 bin discretization
+    2) averaged mean for reward_action_values in the action selection process, decide if the action with lower score
+        could be removed
 
-- allows env setup
-
-- allows algo setup?
-
-- start vmas
-
-- gym env wrappers
-
-- vmas env wrappers
-
-
-- allows to use directly gym wrappers just implemented in the library
 
 
 export DISPLAY=':99.0'
 Xvfb :99 -screen 0 1400x900x24 > /dev/null 2>&1 &
-
 
 # headless

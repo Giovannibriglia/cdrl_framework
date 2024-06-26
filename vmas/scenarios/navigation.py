@@ -27,6 +27,7 @@ class Scenario(BaseScenario):
         "*************************************************************************************************************"
         self.x_semidim = kwargs.get("x_semidim", None)
         self.y_semidim = kwargs.get("y_semidim", None)
+        self.n_sensors = kwargs.get("n_sensors", 12)
         "*************************************************************************************************************"
         self.agents_with_same_goal = kwargs.get("agents_with_same_goal", 1)
         self.split_goals = kwargs.get("split_goals", False)
@@ -100,7 +101,7 @@ class Scenario(BaseScenario):
                     [
                         Lidar(
                             world,
-                            n_rays=12,
+                            n_rays=self.n_sensors,
                             max_range=self.lidar_range,
                             entity_filter=entity_filter_agents,
                         ),
@@ -270,45 +271,59 @@ class Scenario(BaseScenario):
                 raise ValueError("Unsupported scale type. Use 'exponential' or 'linear'.")
             return intervals
 
+        """n = 10
+
         if kind == 'reward':
-            max_value = 0.1
+            max_value = 0.5
             min_value = self.agent_collision_penalty - max(self.x_semidim, self.y_semidim)*2
-            n = 20
-            intervals = create_intervals(min_value, max_value, n, scale='exponential')
+            # n = 10
+            intervals = create_intervals(min_value, max_value, n, scale='linear')
             # print('reward bins: ', n)
         elif kind == 'DX' or kind == 'DY':
             max_value = 0
             min_value = -self.x_semidim*2 if kind == 'DX' else -self.y_semidim*2
-            n = 20 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
-            intervals = create_intervals(min_value, max_value, n, scale='exponential')
+            # n = 10 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
+            intervals = create_intervals(min_value, max_value, n, scale='linear')
             # print('DX-DY bins: ', n)
         elif kind == 'VX' or kind == 'VY':
             max_value = 1
             min_value = -1
-            n = 10 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
-            intervals = create_intervals(min_value, max_value, n, scale='exponential')
+            # n = 5 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
+            intervals = create_intervals(min_value, max_value, n, scale='linear')
             # print('VX-VY bins: ', n)
         elif kind == 'sensor':
-            max_value = 1
-            min_value = 0
-            n = 20
-            intervals = create_intervals(min_value, max_value, n, scale='exponential')
+            max_value = 1.0
+            min_value = 0.0
+            # n = 5
+            intervals = create_intervals(min_value, max_value, n, scale='linear')
             # print('sensor bins: ', n)
         elif kind == 'posX' or kind == 'posY':
             max_value = self.x_semidim*2 if kind == 'posX' else self.y_semidim*2
             min_value = -self.x_semidim*2 if kind == 'posX' else -self.y_semidim*2
-            n = 20 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'posX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
-            intervals = create_intervals(min_value, max_value, n, scale='exponential')
+            # n = 20 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'posX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
+            intervals = create_intervals(min_value, max_value, n, scale='linear')
             # print('posX-posY bins: ', n)
 
-        index = discretize_value(value, intervals)
-        rescaled_value = int((index / (len(intervals) - 2)) * (n - 1))
+        if kind == 'sensor':
+            rescaled_value = 1 if value > 0 else 0
+        elif kind == 'VX' or kind == 'VY':
+            if value > 0:
+                rescaled_value = 1
+            elif value < 0:
+                rescaled_value = -1
+            else:
+                rescaled_value = 0
+        else:
+            index = discretize_value(value, intervals)
+            rescaled_value = int((index / (len(intervals) - 2)) * (n - 1))
         # print(kind, value, n, rescaled_value)
-        return rescaled_value
+        return rescaled_value"""
+
+        return value
     " ********************************************************************************************************** "
 
     def observation(self, agent: Agent):
-        self.BINS = int(1/self.min_collision_distance) * max(self.world.x_semidim, self.world.y_semidim) * 2
+        # self.BINS = int(1/self.min_collision_distance) * max(self.world.x_semidim, self.world.y_semidim) * 2
 
         goal_poses = []
         if self.observe_all_goals:

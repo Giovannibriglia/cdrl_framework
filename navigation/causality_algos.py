@@ -67,7 +67,7 @@ class CausalDiscovery:
                 print('**** Causal graph is not a DAG ****')
         else:
             print(f'\n{self.env_name} - structuring model through NOTEARS... {len(self.df)} timesteps')
-            self.notears_graph = from_pandas(self.df, max_iter=2000, use_gpu=True)
+            self.notears_graph = from_pandas(self.df, max_iter=5000, use_gpu=True)
             self.notears_graph.remove_edges_below_threshold(0.2)
             largest_component = max(nx.weakly_connected_components(self.notears_graph), key=len)
             self.notears_graph = self.notears_graph.subgraph(largest_component).copy()
@@ -251,6 +251,8 @@ class CausalInferenceForRL:
 
         if self.causal_graph is not None and self.df is not None:
             self.add_data(df, causal_graph)
+        else:
+            self.action_space_size = 9
 
     def add_data(self, new_df: pd.DataFrame, new_graph: StructureModel):
         if self.df is None:
@@ -262,6 +264,7 @@ class CausalInferenceForRL:
         self.action_column = [s for s in self.df.columns.to_list() if 'action' in s][0]
 
         self.action_space_size = int(max(self.df[self.action_column].unique()))
+        print('action_space_size')
         self.possible_reward_values = self.df[self.reward_column].unique()
 
         for col in self.df.columns:
@@ -357,7 +360,6 @@ def inference_function(observation: Dict, ie: InferenceEngine, possible_reward_v
 
     for value_reward in possible_reward_values:
         probabilities_action_feature = ie.query({f'{reward_feature}': value_reward})[action_feature]
-        # best_action_value, best_action_prob = max(probabilities_action_feature.items(), key=lambda x: x[1])
 
         reward_action_values[value_reward] = probabilities_action_feature  # {reward_value: dict_action{value:prob}, ..}
 
