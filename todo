@@ -1,8 +1,9 @@
 # TODO:
-    1) Run simulations with 4 agents, 1m timesteps, 1 episode, without discretization where you store the the dataframe
-        sensitive analysis; on this perform causal discovery: 10-20-50-100 bin discretization
-    2) averaged mean for reward_action_values in the action selection process, decide if the action with lower score
+    - Restart baselines
+    - Sensitive analysis on this with causal discovery: 10-20-50-100 bins discretization
+    - Averaged mean for reward_action_values in the action selection process, decide if the action with lower score
         could be removed
+
 
 
 

@@ -26,5 +26,6 @@ if __name__ == '__main__':
     path_file_metrics = 'C:\\Users\giova\Documents\Research\cdrl_framework\\navigation\\results\\random_pomdp.json'
     main(path_file_metrics)
 
+    # TODO: manage other metrics
     # TODO: plots
     # TODO: tables

@@ -1,0 +1,23 @@
+
+'simulation_config':
+  'task': 'navigation'
+  'n_episodes': 10
+  'n_agents': 4
+  'max_steps_env': 20000
+  'n_environments': 10
+  'observability': 'mdp'
+
+'algo_config':
+  'name': 'qlearning'
+  'epsilon_start': 1.0
+  'learning_rate': 0.0001
+  'discount_factor': 0.98
+  'min_epsilon': 0.05
+
+#'causality_config':
+  #'batch_timestep_update': 1000
+  #'online_cd': True
+  #'online_ci': True
+  #'df_for_causality':
+  # 'causal_graph':
+  # 'causal_table':

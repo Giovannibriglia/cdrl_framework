@@ -59,8 +59,8 @@ class Scenario(BaseScenario):
         # agents_with_same_goal = 1: all independent goals
         if self.split_goals:
             assert (
-                self.n_agents % 2 == 0
-                and self.agents_with_same_goal == self.n_agents // 2
+                    self.n_agents % 2 == 0
+                    and self.agents_with_same_goal == self.n_agents // 2
             ), "Splitting the goals is allowed when the agents are even and half the team has the same goal"
 
         "*************************************************************************************************************"
@@ -167,18 +167,18 @@ class Scenario(BaseScenario):
 
             if env_index is None:
                 agent.pos_shaping = (
-                    torch.linalg.vector_norm(
-                        agent.state.pos - agent.goal.state.pos,
-                        dim=1,
-                    )
-                    * self.pos_shaping_factor
+                        torch.linalg.vector_norm(
+                            agent.state.pos - agent.goal.state.pos,
+                            dim=1,
+                        )
+                        * self.pos_shaping_factor
                 )
             else:
                 agent.pos_shaping[env_index] = (
-                    torch.linalg.vector_norm(
-                        agent.state.pos[env_index] - agent.goal.state.pos[env_index]
-                    )
-                    * self.pos_shaping_factor
+                        torch.linalg.vector_norm(
+                            agent.state.pos[env_index] - agent.goal.state.pos[env_index]
+                        )
+                        * self.pos_shaping_factor
                 )
 
     def reward(self, agent: Agent):
@@ -207,10 +207,10 @@ class Scenario(BaseScenario):
                         distance = self.world.get_distance(a, b)
                         a.agent_collision_rew[
                             distance <= self.min_collision_distance
-                        ] += self.agent_collision_penalty
+                            ] += self.agent_collision_penalty
                         b.agent_collision_rew[
                             distance <= self.min_collision_distance
-                        ] += self.agent_collision_penalty
+                            ] += self.agent_collision_penalty
 
         pos_reward = self.pos_rew if self.shared_rew else agent.pos_rew
         tot_rewards = pos_reward + self.final_rew + agent.agent_collision_rew
@@ -236,9 +236,10 @@ class Scenario(BaseScenario):
         return agent.pos_rew
 
     " ********************************************************************************************************** "
-    def _rescale_value(self, kind: str, value: float|int):
 
-        """def discretize_value(value, intervals):
+    def _rescale_value(self, kind: str, value: float | int):
+
+        def discretize_value(value, intervals):
             # Find the interval where the value fits
             for i in range(len(intervals) - 1):
                 if intervals[i] <= value < intervals[i + 1]:
@@ -247,9 +248,9 @@ class Scenario(BaseScenario):
             if value < intervals[0]:
                 return intervals[0]
             elif value >= intervals[-1]:
-                return intervals[-1]"""
+                return intervals[-1]
 
-        def discretize_value(value, intervals):
+        """def discretize_value(value, intervals):
             # it returns the index of the interval where the value fits.
             for i in range(len(intervals) - 1):
                 if intervals[i] <= value < intervals[i + 1]:
@@ -257,7 +258,7 @@ class Scenario(BaseScenario):
             if value < intervals[0]:
                 return 0
             elif value >= intervals[-1]:
-                return len(intervals) - 2
+                return len(intervals) - 2"""
 
         def create_intervals(min_val, max_val, n_intervals, scale='linear'):
             if scale == 'exponential':
@@ -271,23 +272,23 @@ class Scenario(BaseScenario):
                 raise ValueError("Unsupported scale type. Use 'exponential' or 'linear'.")
             return intervals
 
-        """n = 10
+        n = 20
 
         if kind == 'reward':
-            max_value = 0.5
-            min_value = self.agent_collision_penalty - max(self.x_semidim, self.y_semidim)*2
+            max_value = 1
+            min_value = self.agent_collision_penalty * self.n_agents - max(self.x_semidim, self.y_semidim)
             # n = 10
             intervals = create_intervals(min_value, max_value, n, scale='linear')
             # print('reward bins: ', n)
         elif kind == 'DX' or kind == 'DY':
-            max_value = 0
-            min_value = -self.x_semidim*2 if kind == 'DX' else -self.y_semidim*2
+            max_value = -1
+            min_value = +1  # -self.x_semidim * 2 if kind == 'DX' else -self.y_semidim * 2
             # n = 10 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
             intervals = create_intervals(min_value, max_value, n, scale='linear')
             # print('DX-DY bins: ', n)
         elif kind == 'VX' or kind == 'VY':
-            max_value = 1
-            min_value = -1
+            max_value = 0.5
+            min_value = -0.5
             # n = 5 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
             intervals = create_intervals(min_value, max_value, n, scale='linear')
             # print('VX-VY bins: ', n)
@@ -298,28 +299,21 @@ class Scenario(BaseScenario):
             intervals = create_intervals(min_value, max_value, n, scale='linear')
             # print('sensor bins: ', n)
         elif kind == 'posX' or kind == 'posY':
-            max_value = self.x_semidim*2 if kind == 'posX' else self.y_semidim*2
-            min_value = -self.x_semidim*2 if kind == 'posX' else -self.y_semidim*2
+            max_value = self.x_semidim if kind == 'posX' else self.y_semidim
+            min_value = -self.x_semidim if kind == 'posX' else -self.y_semidim
             # n = 20 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'posX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
             intervals = create_intervals(min_value, max_value, n, scale='linear')
             # print('posX-posY bins: ', n)
 
         if kind == 'sensor':
             rescaled_value = 1 if value > 0 else 0
-        elif kind == 'VX' or kind == 'VY':
-            if value > 0:
-                rescaled_value = 1
-            elif value < 0:
-                rescaled_value = -1
-            else:
-                rescaled_value = 0
         else:
             index = discretize_value(value, intervals)
-            rescaled_value = int((index / (len(intervals) - 2)) * (n - 1))
+            rescaled_value = index
+            # rescaled_value = int((index / (len(intervals) - 2)) * (n - 1))
         # print(kind, value, n, rescaled_value)
-        return rescaled_value"""
+        return rescaled_value
 
-        return value
     " ********************************************************************************************************** "
 
     def observation(self, agent: Agent):
@@ -385,12 +379,12 @@ class Scenario(BaseScenario):
         # TODO: valid only for one env
         return torch.cat(
             [
-                new_agent_pose, #agent.state.pos,
-                new_agent_vel, #agent.state.vel
+                new_agent_pose,  # agent.state.pos,
+                new_agent_vel,  # agent.state.vel
             ]
             + goal_poses
             + (
-                [new_sensors_info] # past_sensors_info
+                [new_sensors_info]  # past_sensors_info
                 if self.collisions
                 else []
             ),
@@ -480,19 +474,19 @@ class HeuristicPolicy(BaseHeuristicPolicy):
 
         # Laypunov function
         V_value = (
-            (agent_pos[:, X] - goal_pos[:, X]) ** 2
-            + 0.5 * (agent_pos[:, X] - goal_pos[:, X]) * agent_vel[:, X]
-            + agent_vel[:, X] ** 2
-            + (agent_pos[:, Y] - goal_pos[:, Y]) ** 2
-            + 0.5 * (agent_pos[:, Y] - goal_pos[:, Y]) * agent_vel[:, Y]
-            + agent_vel[:, Y] ** 2
+                (agent_pos[:, X] - goal_pos[:, X]) ** 2
+                + 0.5 * (agent_pos[:, X] - goal_pos[:, X]) * agent_vel[:, X]
+                + agent_vel[:, X] ** 2
+                + (agent_pos[:, Y] - goal_pos[:, Y]) ** 2
+                + 0.5 * (agent_pos[:, Y] - goal_pos[:, Y]) * agent_vel[:, Y]
+                + agent_vel[:, Y] ** 2
         )
 
         LfV_val = (2 * (agent_pos[:, X] - goal_pos[:, X]) + agent_vel[:, X]) * (
             agent_vel[:, X]
         ) + (2 * (agent_pos[:, Y] - goal_pos[:, Y]) + agent_vel[:, Y]) * (
-            agent_vel[:, Y]
-        )
+                      agent_vel[:, Y]
+                  )
         LgV_vals = torch.stack(
             [
                 0.5 * (agent_pos[:, X] - goal_pos[:, X]) + 2 * agent_vel[:, X],
@@ -512,7 +506,7 @@ class HeuristicPolicy(BaseHeuristicPolicy):
         constraints = []
 
         # QP Cost F = u^T @ u + clf_slack**2
-        qp_objective = cp.Minimize(cp.sum_squares(u) + self.clf_slack * clf_slack**2)
+        qp_objective = cp.Minimize(cp.sum_squares(u) + self.clf_slack * clf_slack ** 2)
 
         # control bounds between u_range
         constraints += [u <= u_range]

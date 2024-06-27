@@ -1,12 +1,11 @@
 
 'simulation_config':
   'task': 'navigation'
-  'n_episodes': 2
+  'n_episodes': 10
   'n_agents': 4
-  'max_steps_env': 1000
-  'n_environments': 1
+  'max_steps_env': 20000
+  'n_environments': 10
   'observability': 'pomdp'
-
 
 'algo_config':
   'name': 'qlearning'

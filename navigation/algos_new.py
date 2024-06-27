@@ -53,10 +53,10 @@ class RandomAgentVMAS:
         self.features = []
         num_sensors = len(observation) - 6  # Subtracting 6 for PX, PY, VX, VY, DX, DY
 
-        """ self.obs_features = [f"agent_{self.agent_id}_{feature}" for feature in
+        self.obs_features = [f"agent_{self.agent_id}_{feature}" for feature in
                              ['PX', 'PY', 'VX', 'VY', 'DX', 'DY'] + [f'sensor{N}' for N in range(num_sensors)]]
-        self.features += self.obs_features"""
-        self.obs_features = None
+        self.features += self.obs_features
+
         self.features.append(f"agent_{self.agent_id}_reward")
         self.features.append(f"agent_{self.agent_id}_action")
         self.next_obs_features = [f"agent_{self.agent_id}_next_{feature}" for feature in

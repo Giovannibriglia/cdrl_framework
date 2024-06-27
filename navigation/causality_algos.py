@@ -97,7 +97,7 @@ class CausalDiscovery:
 
     def _causality_assessment(self, graph: StructureModel, df: pd.DataFrame) -> Tuple[List[Tuple], List, List]:
         """ Given an edge, do-calculus on each direction once each other (not simultaneously) """
-        # print('bayesian network definition...')
+        print('bayesian network definition...')
         bn = BayesianNetwork(graph)
         bn = bn.fit_node_states_and_cpds(df)
 

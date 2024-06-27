@@ -68,10 +68,16 @@ def IQM_mean_std(data: list) -> tuple:
     within_iqr_indices = np.where((sorted_data >= lower_bound) & (sorted_data <= upper_bound))[0]
 
     # Calculate IQM (Interquartile Mean)
-    iq_mean = Decimal(np.mean(sorted_data[within_iqr_indices])).quantize(Decimal('0.001'))
+    try:
+        iq_mean = Decimal(np.mean(sorted_data[within_iqr_indices])).quantize(Decimal('0.001'))
+    except:
+        iq_mean = np.mean(sorted_data[within_iqr_indices])
 
     # Calculate IQM standard deviation (IQM_std)
-    iq_std = Decimal(np.std(sorted_data[within_iqr_indices])).quantize(Decimal('0.001'))
+    try:
+        iq_std = Decimal(np.std(sorted_data[within_iqr_indices])).quantize(Decimal('0.001'))
+    except:
+        iq_std = np.std(sorted_data[within_iqr_indices])
 
     return iq_mean, iq_std
 

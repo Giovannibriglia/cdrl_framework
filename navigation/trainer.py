@@ -59,6 +59,8 @@ class VMASTrainer:
                 'time': [[[[] for _ in range(self.n_environments)] for _ in range(self.max_steps_env)] for _ in
                          range(self.n_training_episodes)],
                 'rl_knowledge': [[[] for _ in range(self.n_environments)] for _ in range(self.n_training_episodes)],
+                'n_collisions': [[[[] for _ in range(self.n_environments)] for _ in range(self.max_steps_env)] for _ in
+                         range(self.n_training_episodes)],
                 'causal_graph': None,
                 'df_causality': None,
                 'causal_table': None
@@ -128,6 +130,7 @@ class VMASTrainer:
                 actions = [self.algos[i].choose_action(observations[f'agent_{i}']) for i in range(self.n_agents)]
                 actions = [tensor.item() for tensor in actions]
                 next_observations, rewards, done, info = self._trainer_step(actions, observations, episode)
+
                 if self.if_render:
                     self.env.render()
                 for i in range(self.n_agents):
@@ -135,7 +138,7 @@ class VMASTrainer:
                                          next_observations[f'agent_{i}'])
 
                     self._update_metrics(f'agent_{i}', episode, steps, 0, rewards[f'agent_{i}'],
-                                         actions[i], initial_time)
+                                         actions[i], initial_time, info[f'agent_{i}']['agent_collisions'])
 
                 steps += 1
                 observations = next_observations
@@ -177,7 +180,7 @@ class VMASTrainer:
                                              next_observations[f'agent_{i}'][0])
 
                         self._update_metrics(f'agent_{i}', episode, steps, 0, rewards[f'agent_{i}'][0], actions[i][0],
-                                             initial_time)
+                                             initial_time, info[f'agent_{i}']['agent_collisions'][0])
 
                     else:
                         for env_n in range(self.n_environments):
@@ -185,9 +188,8 @@ class VMASTrainer:
                             self.algos[i].update(observations[f'agent_{i}'][env_n], action_scalar,
                                                  rewards[f'agent_{i}'][env_n],
                                                  next_observations[f'agent_{i}'][env_n])
-
                             self._update_metrics(f'agent_{i}', episode, steps, env_n, rewards[f'agent_{i}'][env_n],
-                                                 actions[i][env_n], initial_time)
+                                                 actions[i][env_n], initial_time, info[f'agent_{i}']['agent_collisions'][env_n])
                 steps += 1
                 observations = next_observations
 
@@ -214,11 +216,20 @@ class VMASTrainer:
                     self.dict_for_pomdp['reward'] = rewards
                     self.dict_for_pomdp['next_state'] = next_observations
 
-            observations_relative = {agent: observations[agent] - self.dict_for_pomdp['state'][agent] for agent in
-                                     observations}
-            next_observations_relative = {agent: next_observations[agent] - self.dict_for_pomdp['next_state'][agent] for
-                                          agent in next_observations}
-            rewards_relative = {agent: rewards[agent] - self.dict_for_pomdp['reward'][agent] for agent in rewards}
+            # Calculate the absolute difference
+            observations_relative = {agent: abs(observations[agent]) - abs(self.dict_for_pomdp['state'][agent])
+                                     for agent in observations}
+            next_observations_relative = {
+                agent: abs(next_observations[agent]) - abs(self.dict_for_pomdp['next_state'][agent]) for agent
+                in next_observations}
+            rewards_relative = {agent: abs(rewards[agent]) - abs(self.dict_for_pomdp['reward'][agent]) for agent
+                                in rewards}
+
+            """print('\n obs', observations['agent_0'])
+            print('new_obs ', observations_relative['agent_0'])
+            print('\n')
+            print('rew ', rewards['agent_0'])
+            print('new_rew', rewards_relative['agent_0'])"""
 
             self.dict_for_pomdp['state'] = observations_relative
             self.dict_for_pomdp['reward'] = rewards_relative
@@ -227,14 +238,20 @@ class VMASTrainer:
             return next_observations_relative, rewards_relative, done, info
 
     def _update_metrics(self, agent_key: str, episode_idx: int, step_idx: int, env_idx: int, reward_value: float = None,
-                        action_value: float = None, initial_time_value: float = None):
-        if reward_value is not None:
-            self.dict_metrics[agent_key]['rewards'][episode_idx][step_idx][env_idx].append(float(reward_value))
-        if action_value is not None:
-            self.dict_metrics[agent_key]['actions'][episode_idx][step_idx][env_idx].append(int(action_value))
-        if initial_time_value is not None:
-            self.dict_metrics[agent_key]['time'][episode_idx][step_idx][env_idx].append(
-                time.time() - initial_time_value)
+                        action_value: float = None, initial_time_value: float = None, collision: Tensor = 0):
+
+        self.dict_metrics[agent_key]['rewards'][episode_idx][step_idx][env_idx].append(float(reward_value))
+
+        self.dict_metrics[agent_key]['actions'][episode_idx][step_idx][env_idx].append(int(action_value))
+
+        self.dict_metrics[agent_key]['time'][episode_idx][step_idx][env_idx].append(
+            time.time() - initial_time_value)
+
+        if collision.item() != 0:
+            collision = 1
+        else:
+            collision = 0
+        self.dict_metrics[agent_key]['n_collisions'][episode_idx][step_idx][env_idx].append(collision)
 
     def _save_metrics(self):
         dir_results = f'{GLOBAL_PATH_REPO}/navigation/results'

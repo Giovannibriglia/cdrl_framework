@@ -3,7 +3,7 @@
   'task': 'navigation'
   'n_episodes': 1
   'n_agents': 4
-  'max_steps_env': 100000
+  'max_steps_env': 1000
   'n_environments': 10
   'observability': 'pomdp'
 
