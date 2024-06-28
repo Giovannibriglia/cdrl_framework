@@ -3,9 +3,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from navigation.utils import IQM_mean_std
 from path_repo import GLOBAL_PATH_REPO
-from navigation.causality_algos import CausalDiscovery
+from navigation.causality_algos import CausalDiscovery, CausalInferenceForRL
 
-n = 10
+n_bins = 20
+agent_n = 0
+n_rows = 50000
 obs = 'mdp'
 
 
@@ -47,31 +49,31 @@ def _rescale_value(kind: str, value: float | int):
         max_value = 1
         min_value = -1 * 4 - max(0.5, 0.5)
         # n = 10
-        intervals = create_intervals(min_value, max_value, n, scale='linear')
+        intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
         # print('reward bins: ', n)
     elif kind == 'DX' or kind == 'DY':
         max_value = -1
         min_value = +1  # -self.x_semidim * 2 if kind == 'DX' else -self.y_semidim * 2
         # n = 10 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
-        intervals = create_intervals(min_value, max_value, n, scale='linear')
+        intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
         # print('DX-DY bins: ', n)
     elif kind == 'VX' or kind == 'VY':
         max_value = 0.5
         min_value = -0.5
         # n = 5 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
-        intervals = create_intervals(min_value, max_value, n, scale='linear')
+        intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
         # print('VX-VY bins: ', n)
     elif kind == 'sensor':
         max_value = 1.0
         min_value = 0.0
         # n = 5
-        intervals = create_intervals(min_value, max_value, n, scale='linear')
+        intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
         # print('sensor bins: ', n)
     elif kind == 'posX' or kind == 'posY':
         max_value = 0.5 if kind == 'posX' else 0.5
         min_value = -0.5 if kind == 'posX' else -0.5
         # n = 20 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'posX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
-        intervals = create_intervals(min_value, max_value, n, scale='linear')
+        intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
         # print('posX-posY bins: ', n)
 
     if kind == 'sensor':
@@ -86,59 +88,74 @@ def _rescale_value(kind: str, value: float | int):
         index = discretize_value(value, intervals)
         rescaled_value = index
         # rescaled_value = int((index / (len(intervals) - 2)) * (n - 1))
-    # print(kind, value, n, rescaled_value)
+
     return rescaled_value
 
 
+def get_new_df(dataframe: pd.DataFrame):
+    agent_X_columns = [s for s in dataframe.columns.to_list() if f'agent_{agent_n}' in s]
+
+    df = dataframe.loc[:, agent_X_columns]
+    df_columns = df.columns.to_list()
+    std_dev = df.std()
+    non_zero_std_columns = std_dev[std_dev != 0].index
+    df_filtered = df[non_zero_std_columns]
+
+    new_dataframe = pd.DataFrame(columns=df_filtered.columns, index=df_filtered.index)
+    for col in df_filtered.columns:
+        if 'action' not in col:
+            if 'sensor' in col:
+                kind = 'sensor'
+            elif 'DX' in col:
+                kind = 'DX'
+            elif 'DY' in col:
+                kind = 'DY'
+            elif 'reward' in col:
+                kind = 'reward'
+            elif 'pX' in col:
+                kind = 'posX'
+            elif 'PY' in col:
+                kind = 'posY'
+            elif 'VX' in col:
+                kind = 'VX'
+            elif 'VY' in col:
+                kind = 'VY'
+            else:
+                kind = None
+
+            if kind:
+                new_dataframe[col] = df_filtered[col].apply(lambda value: _rescale_value(kind, value))
+            else:
+                new_dataframe[col] = df_filtered[col]
+        else:
+            new_dataframe[col] = df_filtered[col]
+
+    return new_dataframe
+
+
+def get_boundaries(dataframe: pd.DataFrame):
+    for col in dataframe.columns.to_list():
+        iqm_mean, iqm_std = IQM_mean_std(dataframe[col])
+        print(
+            f'{col} -> max: {dataframe[col].max()}, min: {dataframe[col].min()}, mean: {dataframe[col].mean()}, std: {dataframe[col].std()}, iqm_mean: {iqm_mean}, iqm_std: {iqm_std}')
+
+    fig = plt.figure(dpi=500, figsize=(16, 9))
+    plt.plot(dataframe['agent_0_reward'])
+    plt.show()
+
+
 df = pd.read_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline_ok/df_random_{obs}_1000000.pkl')
-df = df.head(1000)
-agent_n = 0
+df = df.head(n_rows)
 
-agent_X_columns = [s for s in df.columns.to_list() if f'agent_{agent_n}' in s]
+new_df = get_new_df(df)
 
-df = df.loc[:, agent_X_columns]
-df_columns = df.columns.to_list()
-std_dev = df.std()
-non_zero_std_columns = std_dev[std_dev != 0].index
-df_filtered = df[non_zero_std_columns]
-
-new_df = pd.DataFrame(columns=df_filtered.columns, index=df_filtered.index)
-for col in df_filtered.columns:
-    if 'action' not in col:
-        if 'sensor' in col:
-            kind = 'sensor'
-        elif 'DX' in col:
-            kind = 'DX'
-        elif 'DY' in col:
-            kind = 'DY'
-        elif 'reward' in col:
-            kind = 'reward'
-        elif 'pX' in col:
-            kind = 'posX'
-        elif 'PY' in col:
-            kind = 'posY'
-        elif 'VX' in col:
-            kind = 'VX'
-        elif 'VY' in col:
-            kind = 'VY'
-        else:
-            kind = None
-
-        if kind:
-            new_df[col] = df_filtered[col].apply(lambda value: _rescale_value(kind, value))
-        else:
-            new_df[col] = df_filtered[col]
-    else:
-        new_df[col] = df_filtered[col]
-
-"""print([s for s in df.columns.to_list() if s not in df_filtered.columns.to_list()])
-for col in df_filtered.columns.to_list():
-    iqm_mean, iqm_std = IQM_mean_std(df_filtered[col])
-    print(f'{col} -> max: {df_filtered[col].max()}, min: {df_filtered[col].min()}, mean: {df_filtered[col].mean()}, std: {df_filtered[col].std()}, iqm_mean: {iqm_mean}, iqm_std: {iqm_std}')
-
-fig = plt.figure(dpi=500, figsize=(16, 9))
-plt.plot(df_filtered['agent_0_reward'])
-plt.show()"""
-
-cd = CausalDiscovery(new_df, f'causal_knowledge/offline/navigation', f'agent{agent_n}_{obs}')
+cd = CausalDiscovery(new_df, f'navigation/causal_knowledge/offline/navigation', f'agent{agent_n}_{obs}')
 cd.training()
+causal_graph = cd.return_causal_graph()
+df_for_causality = cd.return_df()
+
+ci = CausalInferenceForRL(df_for_causality, causal_graph)
+causal_table = ci.create_causal_table()
+
+causal_table.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline/navigation/causal_table.pkl')
+causal_table.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline/navigation/causal_table.xlsx')

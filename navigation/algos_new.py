@@ -95,7 +95,7 @@ class Causality:
                  continuous_actions: bool = False, seed: int = 42):
 
         self.env = env
-        self.action_space_size = self.env.action_space['agent_0'].n
+        self.action_space_size = self.env.action_space['agent_0'].n_bins
         self.agent_id = agent_id
         self.scenario = 'navigation' + f'_agent_{self.agent_id}'
         self.continuous_actions = continuous_actions
@@ -222,7 +222,7 @@ class QLearningAgent:
         self.env = env
         self.device = device
         self.agent_id = agent_id
-        self.action_space_size = env.action_space[f'agent_{self.agent_id}'].n
+        self.action_space_size = env.action_space[f'agent_{self.agent_id}'].n_bins
         self.n_steps = n_steps
 
         self.continuous_actions = False  # self.env.continuous_actions
@@ -345,7 +345,7 @@ class DQNAgent:
         self.env = env
         self.device = device
         self.agent_id = agent_id
-        self.action_space_size = env.action_space[f'agent_{self.agent_id}'].n
+        self.action_space_size = env.action_space[f'agent_{self.agent_id}'].n_bins
         self.n_steps = n_steps
 
         self.continuous_actions = False  # self.env.continuous_actions

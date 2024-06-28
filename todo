@@ -1,12 +1,12 @@
 # TODO:
-    - Restart baselines
     - Sensitive analysis on this with causal discovery: 10-20-50-100 bins discretization
     - Averaged mean for reward_action_values in the action selection process, decide if the action with lower score
         could be removed
 
 
 
-
+source MyEnv/bin/activate
+python setup.py install
 export DISPLAY=':99.0'
 Xvfb :99 -screen 0 1400x900x24 > /dev/null 2>&1 &
 
