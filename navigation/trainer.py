@@ -7,7 +7,7 @@ from vmas import make_env
 from path_repo import GLOBAL_PATH_REPO
 from torch import Tensor
 import time
-from navigation.algos_new import RandomAgentVMAS, QLearningAgent, DQNAgent
+from navigation.rl_algos import RandomAgentVMAS, QLearningAgent, DQNAgent
 import torch
 from vmas.simulator.environment import Wrapper
 from tqdm.auto import tqdm
@@ -50,7 +50,8 @@ class VMASTrainer:
                     'env_max_steps': self.max_steps_env,
                     'n_envs': self.n_environments,
                     'x_semidim': self.x_semidim,
-                    'y_semidim': self.y_semidim
+                    'y_semidim': self.y_semidim,
+                    'seed': self.seed
                 },
                 'rewards': [[[[] for _ in range(self.n_environments)] for _ in range(self.max_steps_env)] for _ in
                             range(self.n_training_episodes)],

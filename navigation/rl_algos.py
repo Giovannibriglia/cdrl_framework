@@ -1,5 +1,7 @@
 from typing import Dict
 import random
+
+import ijson
 import numpy as np
 import pandas as pd
 import torch
@@ -214,6 +216,7 @@ class Causality:
 class QLearningAgent:
     def __init__(self, env: Environment, device: str = 'cpu', n_steps: int = 100000, agent_id: int = 0,
                  algo_config: Dict = None, causality_config: Dict = None, seed: int = 42, scenario: str = 'navigation'):
+
         name = 'qlearning'
         self.seed = seed
         np.random.seed(self.seed)
@@ -222,7 +225,7 @@ class QLearningAgent:
         self.env = env
         self.device = device
         self.agent_id = agent_id
-        self.action_space_size = env.action_space[f'agent_{self.agent_id}'].n_bins
+        self.action_space_size = 9  # env.action_space[f'agent_{self.agent_id}'].n_bins
         self.n_steps = n_steps
 
         self.continuous_actions = False  # self.env.continuous_actions
@@ -249,7 +252,28 @@ class QLearningAgent:
         self.epsilon = self.start_epsilon
         self.min_epsilon = float(algo_config.get('min_epsilon', 0.05))
         self.epsilon_decay = 1 - (-np.log(self.min_epsilon) / (EXPLORATION_GAME_PERCENT * self.n_steps))
-        self.q_table = defaultdict(lambda: np.zeros(self.action_space_size))
+        if bool(algo_config.get('transfer_learning', False)):
+            self.q_table = defaultdict(lambda: np.zeros(self.action_space_size))
+        else:
+            # Function to extract 'rl_knowledge' from large JSON file
+            def _extract_rl_knowledge_from_large_json(file_path):
+                rl_knowledge_data = {}
+                with open(file_path, 'r') as file:
+                    parser = ijson.parse(file)
+                    current_agent = None
+                    for prefix, event, value in parser:
+                        if prefix.endswith('.rl_knowledge') and event == 'start_array':
+                            current_agent = prefix.split('.')[0]
+                            rl_knowledge_data[current_agent] = []
+                        elif current_agent and prefix.startswith(
+                                current_agent + '.rl_knowledge') and event == 'start_array':
+                            rl_knowledge_data[current_agent].append([])
+                return rl_knowledge_data
+
+            rl_knowledge = _extract_rl_knowledge_from_large_json(
+                f'{GLOBAL_PATH_REPO}/navigation/results/qlearning_mdp.json')
+            print(rl_knowledge[f'agent_{self.agent_id}'])
+            self.q_table = rl_knowledge[f'agent_{self.agent_id}']
 
     def _setup_causality(self, causality_config):
         self.causality_obj = Causality(self.env, causality_config, self.agent_id)
