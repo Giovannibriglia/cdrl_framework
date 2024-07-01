@@ -8,7 +8,7 @@ from navigation.causality_algos import CausalDiscovery, CausalInferenceForRL
 
 n_bins = 10
 agent_n = 0
-n_rows = 40000
+n_rows = 50000
 obs = 'mdp'
 
 
@@ -77,7 +77,7 @@ def _rescale_value(kind: str, value: float | int):
         intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
         # print('posX-posY bins: ', n)
 
-    if kind == 'sensor':
+    """if kind == 'sensor':
         th = 0.7
         if value >= th:
             rescaled_value = 1
@@ -85,10 +85,10 @@ def _rescale_value(kind: str, value: float | int):
             rescaled_value = 0.5
         else:
             rescaled_value = 0
-    else:
-        index = discretize_value(value, intervals)
-        rescaled_value = index
-        # rescaled_value = int((index / (len(intervals) - 2)) * (n - 1))
+    else:"""
+    index = discretize_value(value, intervals)
+    rescaled_value = index
+    # rescaled_value = int((index / (len(intervals) - 2)) * (n - 1))
 
     return rescaled_value
 
