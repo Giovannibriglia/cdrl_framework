@@ -5,7 +5,8 @@ from navigation.utils import IQM_mean_std
 from path_repo import GLOBAL_PATH_REPO
 from navigation.causality_algos import CausalDiscovery, CausalInferenceForRL
 
-n_bins = 5
+
+n_bins = 10
 agent_n = 0
 n_rows = 10000
 obs = 'mdp'
@@ -145,18 +146,19 @@ def get_boundaries(dataframe: pd.DataFrame):
     plt.show()
 
 
-df = pd.read_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline_ok/df_random_{obs}_1000000.pkl')
-df = df.head(n_rows)
+if __name__ == '__main__':  # Redirecting stdout / stderr
+    df = pd.read_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline_ok/df_random_{obs}_1000000.pkl')
+    df = df.head(n_rows)
 
-new_df = get_new_df(df)
+    new_df = get_new_df(df)
 
-cd = CausalDiscovery(new_df, f'navigation/causal_knowledge/offline/navigation', f'agent{agent_n}_{obs}')
-cd.training(cd_algo='pc')
-causal_graph = cd.return_causal_graph()
-df_for_causality = cd.return_df()
+    cd = CausalDiscovery(new_df, f'navigation/causal_knowledge/offline/navigation', f'agent{agent_n}_{obs}')
+    cd.training(cd_algo='pc')
+    causal_graph = cd.return_causal_graph()
+    df_for_causality = cd.return_df()
 
-ci = CausalInferenceForRL(df_for_causality, causal_graph)
-causal_table = ci.create_causal_table()
+    ci = CausalInferenceForRL(df_for_causality, causal_graph)
+    causal_table = ci.create_causal_table()
 
-causal_table.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline/navigation/causal_table.pkl')
-causal_table.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline/navigation/causal_table.xlsx')
+    causal_table.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline/navigation/causal_table.pkl')
+    causal_table.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline/navigation/causal_table.xlsx')

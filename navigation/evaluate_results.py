@@ -29,7 +29,7 @@ def main(path_metrics):
 
 
 if __name__ == '__main__':
-    path_file_metrics = 'C:\\Users\giova\Documents\Research\cdrl_framework\\navigation\\results\\qlearning_mdp.json'
+    path_file_metrics = 'C:\\Users\giova\Documents\Research\cdrl_framework\\navigation\\results\\dqn_pomdp.json'
     main(path_file_metrics)
 
     # TODO: manage other metrics
