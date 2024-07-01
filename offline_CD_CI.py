@@ -7,7 +7,7 @@ from navigation.causality_algos import CausalDiscovery, CausalInferenceForRL
 
 n_bins = 5
 agent_n = 0
-n_rows = 50000
+n_rows = 10000
 obs = 'mdp'
 
 
