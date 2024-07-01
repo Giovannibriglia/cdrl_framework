@@ -315,7 +315,7 @@ class CausalInferenceForRL:
         combinations = list(itertools.product(*unique_values))
         combinations_list = [dict(zip(not_observations, combination)) for combination in combinations]
 
-        num_chunks = 5 # multiprocessing.cpu_count()
+        num_chunks = multiprocessing.cpu_count()
         chunk_size = len(combinations_list) // num_chunks + 1
         chunks = [combinations_list[i:i + chunk_size] for i in range(0, len(combinations_list), chunk_size)]
 
