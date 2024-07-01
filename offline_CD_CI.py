@@ -5,7 +5,7 @@ from navigation.utils import IQM_mean_std
 from path_repo import GLOBAL_PATH_REPO
 from navigation.causality_algos import CausalDiscovery, CausalInferenceForRL
 
-n_bins = 20
+n_bins = 5
 agent_n = 0
 n_rows = 50000
 obs = 'mdp'
@@ -130,6 +130,7 @@ def get_new_df(dataframe: pd.DataFrame):
         else:
             new_dataframe[col] = df_filtered[col]
 
+    new_dataframe = new_dataframe.loc[:, new_dataframe.std() != 0]
     return new_dataframe
 
 
@@ -150,7 +151,7 @@ df = df.head(n_rows)
 new_df = get_new_df(df)
 
 cd = CausalDiscovery(new_df, f'navigation/causal_knowledge/offline/navigation', f'agent{agent_n}_{obs}')
-cd.training()
+cd.training(cd_algo='pc')
 causal_graph = cd.return_causal_graph()
 df_for_causality = cd.return_df()
 

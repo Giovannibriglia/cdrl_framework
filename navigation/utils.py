@@ -1,8 +1,6 @@
 from decimal import Decimal
 from typing import Dict
 import random
-
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from causalnex.structure import StructureModel
@@ -82,15 +80,12 @@ def IQM_mean_std(data: list) -> tuple:
     return iq_mean, iq_std
 
 
-def compute_iqm_and_std_for_agent(agent_data, metric_key):
+"""def compute_avg_series_for_agent(agent_data, metric_key):
     episode_mean_series = []
-    episode_iqm_means = []
-    episode_iqm_stds = []
 
+    timestep_data = {}
     # Iterate through each episode
     for episode in range(len(agent_data[metric_key])):
-        timestep_data = {}
-
         # Collect data for each timestep across all environments within the current episode
         for step in range(len(agent_data[metric_key][episode])):
             for env in range(len(agent_data[metric_key][episode][step])):
@@ -99,28 +94,54 @@ def compute_iqm_and_std_for_agent(agent_data, metric_key):
                     timestep_data[step] = []
                 if data_series:
                     timestep_data[step].append(data_series)
-        mean_list = []
 
-        # Compute the mean for each timestep in the current episode
-        for step, data_series_list in timestep_data.items():
-            combined_data = [value for series in data_series_list for value in series]
-            if combined_data:
+    mean_list = []
+
+    for step, data_series_list in timestep_data.items():
+        combined_data = [value for series in data_series_list for value in series]
+
+        if combined_data:
+            if metric_key == 'rewards':
                 mean_list.append(np.mean(combined_data))
+            elif metric_key == 'time':
+                mean_list.append(np.sum(combined_data))
+            elif metric_key == 'n_collisions':
+                mean_list.append(len([element for element in combined_data if element != 0]))
+            elif metric_key == 'actions':
+                mean_list.append(np.sum([element for element in combined_data if element != 0]))
 
-        episode_mean_series.append(mean_list)
-
-        # Compute IQM and STD for the current episode
-        if mean_list:
-            episode_iqm_mean, episode_iqm_std = IQM_mean_std(mean_list)
-            episode_iqm_means.append(episode_iqm_mean)
+    episode_mean_series.append(mean_list)
 
     avg_mean_series = np.mean(np.array(episode_mean_series), axis=0).tolist()
 
-    fig = plt.figure(dpi=500, figsize=(16, 9))
-    plt.plot(avg_mean_series)
-    plt.show()
+    return avg_mean_series"""
 
-    return episode_iqm_means, episode_iqm_stds
+
+def compute_avg_series_for_agent(agent_data, metric_key):
+
+    n_episodes = len(agent_data[metric_key])
+    n_steps = len(agent_data[metric_key][0])
+    n_env = len(agent_data[metric_key][0][0])
+
+    list_episodes_series = []
+    for episode in range(n_episodes):
+        episode_series = []
+        for step in range(n_steps):
+            value_env = 0
+            for env in range(n_env):
+                for value in agent_data[metric_key][episode][step][env]:
+                    if metric_key == 'rewards' or metric_key == 'time':
+                        value_env += value
+                    elif metric_key == 'actions':
+                        value_env += 1
+                    elif metric_key == 'n_collisions':
+                        value_env += 1 if value != 0 else 0
+            episode_series.append(value_env/n_env)
+        list_episodes_series.append(episode_series)
+
+    mean_list = np.mean(np.array(list_episodes_series), axis=0).tolist()
+
+    return mean_list
 
 
 " ******************************************************************************************************************** "

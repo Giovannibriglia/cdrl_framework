@@ -212,7 +212,7 @@ class CausalDiscovery:
     def use_pc(self):
         data = self.df.to_numpy()
         labels = [f'{col}' for i, col in enumerate(self.features_names)]
-        cg = pc(data, show_progress=False)
+        cg = pc(data, show_progress=True)
 
         # Create a NetworkX graph
         G = nx.DiGraph()
@@ -249,7 +249,7 @@ class CausalInferenceForRL:
         self.bn = None
         self.causal_graph = None
 
-        if self.causal_graph is not None and self.df is not None:
+        if causal_graph is not None and df is not None:
             self.add_data(df, causal_graph)
         else:
             self.action_space_size = 9
@@ -264,7 +264,7 @@ class CausalInferenceForRL:
         self.action_column = [s for s in self.df.columns.to_list() if 'action' in s][0]
 
         self.action_space_size = int(max(self.df[self.action_column].unique()))
-        print('action_space_size')
+        print('action_space_size: ', self.action_space_size)
         self.possible_reward_values = self.df[self.reward_column].unique()
 
         for col in self.df.columns:
@@ -315,7 +315,7 @@ class CausalInferenceForRL:
         combinations = list(itertools.product(*unique_values))
         combinations_list = [dict(zip(not_observations, combination)) for combination in combinations]
 
-        num_chunks = multiprocessing.cpu_count()
+        num_chunks = 5 # multiprocessing.cpu_count()
         chunk_size = len(combinations_list) // num_chunks + 1
         chunks = [combinations_list[i:i + chunk_size] for i in range(0, len(combinations_list), chunk_size)]
 
@@ -342,6 +342,7 @@ def process_chunk(chunk: Tuple, df: pd.DataFrame, causal_graph: StructureModel):
         reward_action_values = inference_function(comb, ie, possible_reward_values, col_reward, col_action)
         new_row = comb.copy()
         new_row[COL_REWARD_ACTION_VALUES] = reward_action_values
+        print(new_row)
         rows.append(new_row)
     return rows
 
