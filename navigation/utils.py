@@ -1,9 +1,13 @@
 from decimal import Decimal
 from typing import Dict
 import random
+import json
+import ijson
+import os
 import numpy as np
 import torch
 from causalnex.structure import StructureModel
+from path_repo import GLOBAL_PATH_REPO
 
 " ******************************************************************************************************************** "
 
@@ -118,7 +122,6 @@ def IQM_mean_std(data: list) -> tuple:
 
 
 def compute_avg_series_for_agent(agent_data, metric_key):
-
     n_episodes = len(agent_data[metric_key])
     n_steps = len(agent_data[metric_key][0])
     n_env = len(agent_data[metric_key][0][0])
@@ -136,7 +139,7 @@ def compute_avg_series_for_agent(agent_data, metric_key):
                         value_env += 1
                     elif metric_key == 'n_collisions':
                         value_env += 1 if value != 0 else 0
-            episode_series.append(value_env/n_env)
+            episode_series.append(value_env / n_env)
         list_episodes_series.append(episode_series)
 
     mean_list = np.mean(np.array(list_episodes_series), axis=0).tolist()
@@ -154,3 +157,17 @@ def _state_to_tuple(state):
 
 def exploration_action(reward_action_values: Dict) -> int:
     return random.choices(list(reward_action_values.keys()), weights=list(reward_action_values.values()), k=1)[0]
+
+
+def get_rl_knowledge(filepath, agent_id):
+    with open(f'{GLOBAL_PATH_REPO}/{filepath}', 'r') as file:
+        data = json.load(file)
+
+    # Generate the agent key
+    agent_key = f'agent_{agent_id}'
+
+    # Retrieve the rl_knowledge for the given agent
+    if agent_key in data:
+        return data[agent_key]['rl_knowledge']
+    else:
+        raise KeyError(f'Agent ID {agent_id} not found in the data')

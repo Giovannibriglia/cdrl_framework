@@ -9,4 +9,4 @@
 
 'algo_config':
   'name': 'random'
-  'save_df': True
+  'save_df': False

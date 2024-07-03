@@ -95,8 +95,8 @@ class CausalDiscovery:
                 print(
                     f'Number of graphs: {nx.number_weakly_connected_components(self.notears_graph)},'f' DAG: {nx.is_directed_acyclic_graph(self.notears_graph)}')
 
-    def _causality_assessment(self, graph: StructureModel, df: pd.DataFrame) -> Tuple[List[Tuple], List, List]:
-        """ Given an edge, do-calculus on each direction once each other (not simultaneously) """
+    """def _causality_assessment(self, graph: StructureModel, df: pd.DataFrame) -> Tuple[List[Tuple], List, List]:
+        
         print('bayesian network definition...')
         bn = BayesianNetwork(graph)
         bn = bn.fit_node_states_and_cpds(df)
@@ -163,6 +163,75 @@ class CausalDiscovery:
                 if node in independent_vars:
                     independent_vars.remove(node)  # Remove from independents
                     # print(f"Link removed: {node}")
+
+        return causal_relationships, list(independent_vars), list(dependent_vars)"""
+
+    def _causality_assessment(self, graph: StructureModel, df: pd.DataFrame) -> Tuple[List[Tuple], List, List]:
+        """ Given an edge, do-calculus on each direction once each other (not simultaneously) """
+        print('Bayesian network definition...')
+        bn = BayesianNetwork(graph)
+        bn = bn.fit_node_states_and_cpds(df)
+
+        bad_nodes = [node for node in bn.nodes if not re.match("^[0-9a-zA-Z_]+$", node)]
+        if bad_nodes:
+            print('Bad nodes: ', bad_nodes)
+
+        ie = InferenceEngine(bn)
+
+        # Initial assumption: all nodes are independent until proven dependent
+        independent_vars = set(graph.nodes)
+        dependent_vars = set()
+        causal_relationships = []
+
+        # Precompute unique values for all nodes
+        unique_values = {node: df[node].unique() for node in graph.nodes}
+
+        # Initial query to get the baseline distributions
+        before = ie.query()
+
+        # Iterate over each node in the graph
+        pbar = tqdm(graph.nodes, desc=f'{self.env_name} nodes')
+        for node in pbar:
+            if node in dependent_vars:
+                continue  # Skip nodes already marked as dependent
+
+            connected_nodes = list(self.notears_graph.neighbors(node))
+            change_detected = False
+
+            # Perform interventions on the node and observe changes in all connected nodes
+            for value in unique_values[node]:
+                try:
+                    ie.do_intervention(node, int(value))
+                    after = ie.query(connected_nodes + [node])  # Query only relevant nodes
+
+                    # Check each connected node for changes in their distribution
+                    for conn_node in connected_nodes:
+                        best_key_before, max_value_before = max(before[conn_node].items(), key=lambda x: x[1])
+                        best_key_after, max_value_after = max(after[conn_node].items(), key=lambda x: x[1])
+                        uniform_probability_value = round(1 / len(after[conn_node]), 8)
+
+                        if max_value_after > uniform_probability_value and best_key_after != best_key_before:
+                            dependent_vars.add(conn_node)  # Mark as dependent
+                            independent_vars.discard(conn_node)  # Remove from independents
+                            change_detected = True
+                            causal_relationships.append((node, conn_node))  # Ensure this is a 2-tuple
+
+                    # Also check the intervened node itself
+                    best_key_before, max_value_before = max(before[node].items(), key=lambda x: x[1])
+                    best_key_after, max_value_after = max(after[node].items(), key=lambda x: x[1])
+                    uniform_probability_value = round(1 / len(after[node]), 8)
+
+                    if max_value_after > uniform_probability_value and best_key_after != best_key_before:
+                        change_detected = True
+
+                except Exception as e:
+                    # Log the error
+                    print(f"Error during intervention on {node} with value {value}: {str(e)}")
+                    pass
+
+            if change_detected:
+                dependent_vars.add(node)  # Mark as dependent
+                independent_vars.discard(node)  # Remove from independents
 
         return causal_relationships, list(independent_vars), list(dependent_vars)
 
@@ -235,7 +304,8 @@ class CausalDiscovery:
 
 
 class CausalInferenceForRL:
-    def __init__(self, df: pd.DataFrame = None, causal_graph: StructureModel = None, causal_table: pd.DataFrame = None):
+    def __init__(self, df: pd.DataFrame = None, causal_graph: StructureModel = None, causal_table: pd.DataFrame = None,
+                 dir_name: str = None, env_name: str = None):
 
         self.action_space_size = None
         self.action_column = None
@@ -249,8 +319,16 @@ class CausalInferenceForRL:
         self.bn = None
         self.causal_graph = None
 
+        self.dir_saving = f'{dir_name}/{env_name}'
+        os.makedirs(self.dir_saving, exist_ok=True)
+
         if causal_graph is not None and df is not None:
-            self.add_data(df, causal_graph)
+            if isinstance(causal_graph, list):
+                sm = StructureModel()
+                sm.add_edges_from([(node1, node2) for node1, node2 in causal_graph])
+                self.add_data(df, sm)
+            elif isinstance(causal_graph, StructureModel):
+                self.add_data(df, causal_graph)
         else:
             self.action_space_size = 9
 
@@ -264,28 +342,29 @@ class CausalInferenceForRL:
         self.action_column = [s for s in self.df.columns.to_list() if 'action' in s][0]
 
         self.action_space_size = int(max(self.df[self.action_column].unique()))
-        print('action_space_size: ', self.action_space_size)
+
         self.possible_reward_values = self.df[self.reward_column].unique()
 
         for col in self.df.columns:
             self.df[str(col)] = self.df[str(col)].astype(str).str.replace(',', '').astype(float)
 
         self.causal_graph = new_graph
-        try:
-            self.bn = BayesianNetwork(self.causal_graph)
-            self.bn = self.bn.fit_node_states_and_cpds(self.df)
 
-            bad_nodes = [node for node in self.bn.nodes if not re.match("^[0-9a-zA-Z_]+$", node)]
-            if bad_nodes:
-                print('Bad nodes: ', bad_nodes)
+        print('bayesian network definition...')
+        self.bn = BayesianNetwork(self.causal_graph)
+        self.bn = self.bn.fit_node_states_and_cpds(self.df)
 
-            self.ie = InferenceEngine(self.bn)
-        except:
+        bad_nodes = [node for node in self.bn.nodes if not re.match("^[0-9a-zA-Z_]+$", node)]
+        if bad_nodes:
+            print('Bad nodes: ', bad_nodes)
+        print('inference engine definition...')
+        self.ie = InferenceEngine(self.bn)
+        """except:
             self.bn = None
-            self.ie = None
+            self.ie = None"""
 
     def get_rewards_actions_values(self, observation: Dict, online: bool) -> dict:
-        print(observation)
+
         if online:  # online causal inference
             if self.bn is not None and self.ie is not None:
                 print('online bn')
@@ -296,16 +375,19 @@ class CausalInferenceForRL:
                 uniform_prob = 1 / self.action_space_size
                 return {key: uniform_prob for key in range(self.action_space_size)}
         else:  # offline causal inference
-            filtered_df = self.causal_table.copy()
-            for feature, value in observation.items():
-                filtered_df = filtered_df[filtered_df[feature] == value]
+            if self.causal_table is not None:
+                filtered_df = self.causal_table.copy()
+                for feature, value in observation.items():
+                    filtered_df = filtered_df[filtered_df[feature] == value]
 
-            if not filtered_df.empty:
-                return filtered_df['reward_action_values'].values[0]
+                if not filtered_df.empty:
+                    return filtered_df['reward_action_values'].values[0]
+                else:
+                    print('No reward-action values for this observation are available')
+                    uniform_prob = 1 / self.action_space_size
+                    return {key: uniform_prob for key in range(self.action_space_size)}
             else:
-                print('No reward-action values for this observation are available')
-                uniform_prob = 1 / self.action_space_size
-                return {key: uniform_prob for key in range(self.action_space_size)}
+                raise ValueError('There is no causal table')
 
     def create_causal_table(self) -> pd.DataFrame:
         features = self.df.columns.to_list()
@@ -361,7 +443,6 @@ def inference_function(observation: Dict, ie: InferenceEngine, possible_reward_v
 
     for value_reward in possible_reward_values:
         probabilities_action_feature = ie.query({f'{reward_feature}': value_reward})[action_feature]
-
         reward_action_values[value_reward] = probabilities_action_feature  # {reward_value: dict_action{value:prob}, ..}
 
     for feature, value in observation.items():

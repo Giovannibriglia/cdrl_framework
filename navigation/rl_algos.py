@@ -1,7 +1,6 @@
 from typing import Dict
 import random
-
-import ijson
+import json
 import numpy as np
 import pandas as pd
 import torch
@@ -11,7 +10,7 @@ from collections import namedtuple, deque, defaultdict
 from torch import tensor, optim, Tensor
 from vmas.simulator.environment import Environment
 from navigation.causality_algos import CausalInferenceForRL, CausalDiscovery
-from navigation.utils import detach_dict, exploration_action, _state_to_tuple
+from navigation.utils import detach_dict, exploration_action, _state_to_tuple, get_rl_knowledge
 from path_repo import GLOBAL_PATH_REPO
 
 EXPLORATION_GAME_PERCENT = 0.7
@@ -164,7 +163,8 @@ class Causality:
                 df_for_ci = self.cd.return_df()
 
                 if self.ci is None:
-                    self.ci = CausalInferenceForRL(df_for_ci, causal_graph)
+                    self.ci = CausalInferenceForRL(df_for_ci, causal_graph, dir_name=f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge',
+                                              env_name=self.scenario)
                 else:
                     self.ci.add_data(df_for_ci, causal_graph)
 
@@ -208,8 +208,9 @@ class Causality:
         if self.ci is None:
             return {key: 1 / self.action_space_size for key in range(self.action_space_size)}
         else:
-            reward_action_values = self.ci.get_rewards_actions_values(obs, self.online_ci)
-            print(reward_action_values)
+            obs_dict = {key: obs[n] for n, key in enumerate(self.obs_features)}
+            reward_action_values = self.ci.get_rewards_actions_values(obs_dict, self.online_ci)
+            print('Reward-action-values causal inference: ', reward_action_values)
             return reward_action_values
 
 
@@ -252,28 +253,20 @@ class QLearningAgent:
         self.epsilon = self.start_epsilon
         self.min_epsilon = float(algo_config.get('min_epsilon', 0.05))
         self.epsilon_decay = 1 - (-np.log(self.min_epsilon) / (EXPLORATION_GAME_PERCENT * self.n_steps))
-        if bool(algo_config.get('transfer_learning', False)):
-            self.q_table = defaultdict(lambda: np.zeros(self.action_space_size))
-        else:
-            # Function to extract 'rl_knowledge' from large JSON file
-            def _extract_rl_knowledge_from_large_json(file_path):
-                rl_knowledge_data = {}
-                with open(file_path, 'r') as file:
-                    parser = ijson.parse(file)
-                    current_agent = None
-                    for prefix, event, value in parser:
-                        if prefix.endswith('.rl_knowledge') and event == 'start_array':
-                            current_agent = prefix.split('.')[0]
-                            rl_knowledge_data[current_agent] = []
-                        elif current_agent and prefix.startswith(
-                                current_agent + '.rl_knowledge') and event == 'start_array':
-                            rl_knowledge_data[current_agent].append([])
-                return rl_knowledge_data
+        filepath_transfer_learning = algo_config.get('transfer_learning', None)
 
-            rl_knowledge = _extract_rl_knowledge_from_large_json(
-                f'{GLOBAL_PATH_REPO}/navigation/results/qlearning_mdp.json')
-            print(rl_knowledge[f'agent_{self.agent_id}'])
-            self.q_table = rl_knowledge[f'agent_{self.agent_id}']
+        self.q_table = defaultdict(lambda: np.zeros(self.action_space_size))
+
+        if filepath_transfer_learning is not None:
+            self.q_table = defaultdict(lambda: np.zeros(self.action_space_size))
+
+            rl_knowledge = get_rl_knowledge(filepath_transfer_learning, self.agent_id)
+
+            for state_action_dict in rl_knowledge[0]:
+                for state_action, q_values in state_action_dict.items():
+                    # Convert the string representation of the tuple back to an actual tuple
+                    state_action_tuple = eval(state_action)
+                    self.q_table[state_action_tuple] = q_values
 
     def _setup_causality(self, causality_config):
         self.causality_obj = Causality(self.env, causality_config, self.agent_id)
@@ -297,6 +290,7 @@ class QLearningAgent:
 
                 chosen_action = np.argmax(masked_state_action_values)
             else:"""
+
             state_tuple = _state_to_tuple(state)
             state_action_values = self.q_table[state_tuple]
             chosen_action = np.argmax(state_action_values)
@@ -369,7 +363,7 @@ class DQNAgent:
         self.env = env
         self.device = device
         self.agent_id = agent_id
-        self.action_space_size = env.action_space[f'agent_{self.agent_id}'].n_bins
+        self.action_space_size = 9  # env.action_space[f'agent_{self.agent_id}']
         self.n_steps = n_steps
 
         self.continuous_actions = False  # self.env.continuous_actions
@@ -393,17 +387,35 @@ class DQNAgent:
         self.discount_factor = float(algo_config.get('discount_factor', 0.98))
         self.start_epsilon = float(algo_config.get('start_epsilon', 1.0))
         self.epsilon = self.start_epsilon
-        self.min_epsilon = float(algo_config.get('min_epsilon', 0.05))
+        self.min_epsilon = float(algo_config.get('min_epsilon', 0.01))
         self.epsilon_decay = 1 - (-np.log(self.min_epsilon) / (EXPLORATION_GAME_PERCENT * self.n_steps))
 
-        # Q-Network
+        filepath_transfer_learning = algo_config.get('transfer_learning', None)
         self.q_network = QNetwork(self.state_space_size, self.action_space_size).to(self.device)
+        if filepath_transfer_learning is not None:
+            rl_knowledge = get_rl_knowledge(filepath_transfer_learning, self.agent_id)
+            state_dict = self._rl_knowledge_to_state_dict(rl_knowledge[0][0])
+            # print(state_dict)
+            self.q_network.load_state_dict(state_dict)
+            # self.q_network.load_state_dict(self._convert_serialized_state_dict(rl_knowledge))
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
 
         # Experience Replay
         self.batch_size = int(algo_config.get('batch_size', 64))
         self.len_replay_memory_size = int(algo_config.get('replay_memory_size', 10000))
         self.replay_memory = deque(maxlen=self.len_replay_memory_size)
+
+    def _rl_knowledge_to_state_dict(self, rl_knowledge):
+        # Initialize an empty state dictionary
+        state_dict = {k: torch.tensor(v) for k, v in rl_knowledge.items()}
+
+        # Assuming rl_knowledge is a list of lists of tensors
+        """state_dict['fc1.weight'] = rl_knowledge['fc1.weight']
+        state_dict['fc1.bias'] = torch.tensor(rl_knowledge[1])
+        state_dict['fc2.weight'] = torch.tensor(rl_knowledge[2])
+        state_dict['fc2.bias'] = torch.tensor(rl_knowledge[3])"""
+
+        return state_dict
 
     def _setup_causality(self, causality_config):
         self.causality_obj = Causality(self.env, causality_config, self.agent_id)
@@ -483,9 +495,10 @@ class DQNAgent:
         serialized_state_dict = {k: v.tolist() for k, v in self.q_network.state_dict().items()}
         return serialized_state_dict
 
-    def load(self, filename):
-        self.q_network.load_state_dict(torch.load(filename, map_location=self.device))
-        self.q_network.eval()
+    def load(self, serialized_state_dict):
+        # Convert lists back to tensors
+        state_dict = {k: torch.tensor(v) for k, v in serialized_state_dict.items()}
+        self.q_network.load_state_dict(state_dict)
 
     def reset_RL_knowledge(self):
         # Q-Network

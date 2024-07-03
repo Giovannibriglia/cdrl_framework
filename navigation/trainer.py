@@ -69,13 +69,13 @@ class VMASTrainer:
         }
 
     def _config_env(self, simulation_config: Dict = None):
-        self.n_training_episodes = int(simulation_config.get('n_episodes', 10))
-        self.n_agents = int(simulation_config.get('n_agents', 10))
+        self.n_training_episodes = int(simulation_config.get('n_episodes', 1))
+        self.n_agents = int(simulation_config.get('n_agents', 3))
         self.scenario = str(simulation_config.get('task', 'navigation'))
-        self.max_steps_env = int(simulation_config.get('max_steps_env', 20000))
-        self.x_semidim = float(simulation_config.get('x_semidim', 0.5))
-        self.y_semidim = float(simulation_config.get('y_semidim', 0.5))
-        self.n_sensors = int(simulation_config.get('n_sensors', 12))
+        self.max_steps_env = int(simulation_config.get('max_steps_env', 5000))
+        self.x_semidim = float(simulation_config.get('x_semidim', 1))
+        self.y_semidim = float(simulation_config.get('y_semidim', 1))
+        self.n_sensors = int(simulation_config.get('n_sensors', 8))
 
         print('Device: ', self.device)
         env = make_env(
@@ -111,6 +111,7 @@ class VMASTrainer:
         return [self._config_algo(i, algo_config, causality_config) for i in range(self.n_agents)]
 
     def train(self):
+        # TODO: stop specific agent in specific env when it has done
         if self.env_wrapper is None:
             self._native_train()
         elif self.env_wrapper == self.gym_wrapper:
@@ -156,11 +157,12 @@ class VMASTrainer:
 
         for episode in pbar:
             observations = self.env.reset()
-            dones = torch.tensor([False * self.n_agents], device=self.device)
+            dones = torch.tensor([False * self.n_environments], device=self.device)
 
             steps = 0
             initial_time = time.time()
             while not any(dones):
+                print(observations['agent_0'])
                 if self.n_environments == 1:
                     actions = [self.algos[i].choose_action(observations[f'agent_{i}'][0]) for i in
                                range(self.n_agents)]
@@ -171,6 +173,7 @@ class VMASTrainer:
                         for i in range(self.n_agents)]
 
                 next_observations, rewards, dones, info = self._trainer_step(actions, observations, episode)
+
                 if self.if_render:
                     self.env.render()
 
@@ -225,12 +228,6 @@ class VMASTrainer:
                 in next_observations}
             rewards_relative = {agent: abs(rewards[agent]) - abs(self.dict_for_pomdp['reward'][agent]) for agent
                                 in rewards}
-
-            """print('\n obs', observations['agent_0'])
-            print('new_obs ', observations_relative['agent_0'])
-            print('\n')
-            print('rew ', rewards['agent_0'])
-            print('new_rew', rewards_relative['agent_0'])"""
 
             self.dict_for_pomdp['state'] = observations_relative
             self.dict_for_pomdp['reward'] = rewards_relative
@@ -296,5 +293,5 @@ def run_simulations(path_yaml_config: str, if_rendering: bool = False):
 
 
 if __name__ == '__main__':
-    path_file = f'{GLOBAL_PATH_REPO}/config_simulations/causal_qlearning_online.yaml'
+    path_file = f'{GLOBAL_PATH_REPO}/config_simulations/qlearning_vanilla_mdp.yaml'
     run_simulations(path_file, False)

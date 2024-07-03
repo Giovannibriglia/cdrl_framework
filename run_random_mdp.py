@@ -6,3 +6,5 @@ if __name__ == '__main__':
     pyglet.options['headless'] = True
     path_file = f'{GLOBAL_PATH_REPO}/config_simulations/random_mdp.yaml'
     run_simulations(path_file, False)
+
+

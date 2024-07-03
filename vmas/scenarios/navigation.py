@@ -364,7 +364,8 @@ class Scenario(BaseScenario):
         new_agent_vel = torch.tensor(list_agent_vel, device='cuda:0')
 
         past_sensors_infos = agent.sensors[0]._max_range - agent.sensors[0].measure()
-        all_sensor_values = []
+
+        """all_sensor_values = []
         for past_sensors_info in past_sensors_infos:
             tensor_cpu = past_sensors_info.cpu().numpy()
             new_values = []
@@ -373,23 +374,34 @@ class Scenario(BaseScenario):
                 new_value = self._rescale_value('sensor', past_value)
                 new_values.append(new_value)
             all_sensor_values.append(new_values)
-        new_sensors_info = torch.tensor(all_sensor_values, device='cuda:0')
+        new_sensors_info = torch.tensor(all_sensor_values, device='cuda:0')"""
+
+        max_indices = torch.argmax(past_sensors_infos, dim=1, keepdim=True)
+        # Check if all values are 0 and set index to -1
+        all_zero_indices = torch.all(past_sensors_infos == 0, dim=1, keepdim=True)
+        max_indices = torch.where(all_zero_indices, torch.tensor([[-1]], device='cuda:0').expand(max_indices.shape),
+                                  max_indices)
 
         " ****************************************************************************************************** "
-        # TODO: valid only for one env
-        return torch.cat(
+        """print('\nagent_pos: ', new_agent_pose)
+        print('agent_vel: ', new_agent_vel)
+        print('goal_poses: ', goal_poses)
+        print('new_sensors_info: ', new_sensors_info)"""
+
+        tensor_to_return = torch.cat(
             [
                 new_agent_pose,  # agent.state.pos,
                 new_agent_vel,  # agent.state.vel
             ]
             + goal_poses
             + (
-                [new_sensors_info]  # past_sensors_info
+                [max_indices]  # past_sensors_info
                 if self.collisions
                 else []
             ),
             dim=-1,
         )
+        return tensor_to_return
 
     def done(self):
         return torch.stack(

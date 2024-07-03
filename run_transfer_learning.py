@@ -4,5 +4,5 @@ import pyglet
 
 if __name__ == '__main__':
     pyglet.options['headless'] = True
-    path_file = f'{GLOBAL_PATH_REPO}/config_simulations/qlearning_vanilla_mdp.yaml'
+    path_file = f'{GLOBAL_PATH_REPO}/config_simulations/transfer_learning_dqn.yaml'
     run_simulations(path_file, True)
