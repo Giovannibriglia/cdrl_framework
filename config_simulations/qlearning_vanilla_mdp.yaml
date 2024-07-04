@@ -4,7 +4,7 @@
   'n_episodes': 1
   'n_agents': 4
   'max_steps_env': 2000
-  'n_environments': 1
+  'n_environments': 4
   'observability': 'mdp'
 
 'algo_config':

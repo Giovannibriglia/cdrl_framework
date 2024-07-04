@@ -71,6 +71,7 @@ class CausalDiscovery:
             self.notears_graph.remove_edges_below_threshold(0.2)
             largest_component = max(nx.weakly_connected_components(self.notears_graph), key=len)
             self.notears_graph = self.notears_graph.subgraph(largest_component).copy()
+            # self.notears_graph = self.generate_random_dag(self.features_names)
             self._plot_and_save_graph(self.notears_graph, False)
 
             if nx.number_weakly_connected_components(self.notears_graph) == 1 and nx.is_directed_acyclic_graph(
@@ -127,55 +128,100 @@ class CausalDiscovery:
 
             # Perform interventions on the node and observe changes in all connected nodes
             for value in unique_values[node]:
-                try:
-                    ie.do_intervention(node, int(value))
-                    after = ie.query()
+                #try:
+                dict_set_probs = {}
+                for key in unique_values[node]:
+                    dict_set_probs[key] = 1 if key == value else 0
 
-                    # Check each connected node for changes in their distribution
-                    for conn_node in connected_nodes:
-                        best_key_before, max_value_before = max(before[conn_node].items(), key=lambda x: x[1])
-                        best_key_after, max_value_after = max(after[conn_node].items(), key=lambda x: x[1])
-                        uniform_probability_value = round(1 / len(after[conn_node]), 8)
+                ie.do_intervention(str(node), dict_set_probs)
+                after = ie.query()
 
-                        if max_value_after > uniform_probability_value and best_key_after != best_key_before:
-                            dependent_vars.add(conn_node)  # Mark as dependent
-                            if conn_node in independent_vars:
-                                independent_vars.remove(conn_node)  # Remove from independents
-                                # print(f"Link removed: {node} -> {conn_node}")
-                            change_detected = True
-                            causal_relationships.append((node, conn_node))  # Ensure this is a 2-tuple
-
-                    # Also check the intervened node itself
-                    best_key_before, max_value_before = max(before[node].items(), key=lambda x: x[1])
-                    best_key_after, max_value_after = max(after[node].items(), key=lambda x: x[1])
-                    uniform_probability_value = round(1 / len(after[node]), 8)
+                # Check each connected node for changes in their distribution
+                for conn_node in connected_nodes:
+                    best_key_before, max_value_before = max(before[conn_node].items(), key=lambda x: x[1])
+                    best_key_after, max_value_after = max(after[conn_node].items(), key=lambda x: x[1])
+                    uniform_probability_value = round(1 / len(after[conn_node]), 8)
 
                     if max_value_after > uniform_probability_value and best_key_after != best_key_before:
+                        dependent_vars.add(conn_node)  # Mark as dependent
+                        if conn_node in independent_vars:
+                            independent_vars.remove(conn_node)  # Remove from independents
+                            # print(f"Link removed: {node} -> {conn_node}")
                         change_detected = True
+                        causal_relationships.append((node, conn_node))  # Ensure this is a 2-tuple
 
-                except Exception as e:
-                    # Log the error
-                    # print(f"Error during intervention on {node} with value {value}: {str(e)}")
-                    pass
+                # Also check the intervened node itself
+                best_key_before, max_value_before = max(before[node].items(), key=lambda x: x[1])
+                best_key_after, max_value_after = max(after[node].items(), key=lambda x: x[1])
+                uniform_probability_value = round(1 / len(after[node]), 8)
 
-            if change_detected:
-                dependent_vars.add(node)  # Mark as dependent
-                if node in independent_vars:
-                    independent_vars.remove(node)  # Remove from independents
-                    # print(f"Link removed: {node}")
+                if max_value_after > uniform_probability_value and best_key_after != best_key_before:
+                    change_detected = True"""
+
+    """except Exception as e:
+        # Log the error
+        print(f"CD) Error during intervention on {node} with value {value}: {str(e)}")
+        pass"""
+
+    """ie.reset_do(str(node))
+
+    if change_detected:
+        dependent_vars.add(node)  # Mark as dependent
+        if node in independent_vars:
+            independent_vars.remove(node)  # Remove from independents
+            # print(f"Link removed: {node}")
 
         return causal_relationships, list(independent_vars), list(dependent_vars)"""
 
+    def generate_random_dag(self, nodes):
+        # Initialize the StructureModel
+        sm = StructureModel()
+
+        # Identify "action" and "reward" nodes
+        action_nodes = [node for node in nodes if "action" in node]
+        reward_nodes = [node for node in nodes if "reward" in node]
+        other_nodes = [node for node in nodes if node not in action_nodes + reward_nodes]
+
+        # Shuffle the non-action and non-reward nodes to create a random topological order
+        random.shuffle(other_nodes)
+
+        # Create a sorted list of nodes: action_nodes + other_nodes + reward_nodes
+        sorted_nodes = action_nodes + other_nodes + reward_nodes
+
+        # Ensure the graph is fully connected by adding a backbone
+        for i in range(len(sorted_nodes) - 1):
+            sm.add_edge(sorted_nodes[i], sorted_nodes[i + 1])
+
+        # Connect action nodes to all other nodes
+        for action_node in action_nodes:
+            for node in sorted_nodes:
+                if action_node != node:
+                    sm.add_edge(action_node, node)
+
+        # Connect all other nodes to reward nodes
+        for node in sorted_nodes:
+            if node not in reward_nodes:
+                for reward_node in reward_nodes:
+                    sm.add_edge(node, reward_node)
+
+        # Add additional random edges to the DAG
+        for i in range(len(sorted_nodes)):
+            for j in range(i + 2, len(sorted_nodes)):  # Skip immediate next node to avoid redundant backbone edges
+                if random.random() < 0.5:  # Randomly decide to add an edge
+                    sm.add_edge(sorted_nodes[i], sorted_nodes[j])
+
+        return sm
+
     def _causality_assessment(self, graph: StructureModel, df: pd.DataFrame) -> Tuple[List[Tuple], List, List]:
-        """ Given an edge, do-calculus on each direction once each other (not simultaneously) """
         print('Bayesian network definition...')
         bn = BayesianNetwork(graph)
+        print('Bayesian network fitting...')
         bn = bn.fit_node_states_and_cpds(df)
 
         bad_nodes = [node for node in bn.nodes if not re.match("^[0-9a-zA-Z_]+$", node)]
         if bad_nodes:
             print('Bad nodes: ', bad_nodes)
-
+        print('Inference engine definition...')
         ie = InferenceEngine(bn)
 
         # Initial assumption: all nodes are independent until proven dependent
@@ -200,9 +246,16 @@ class CausalDiscovery:
 
             # Perform interventions on the node and observe changes in all connected nodes
             for value in unique_values[node]:
+                dict_set_probs = {}
+                if change_detected:
+                    continue
+
+                for key in unique_values[node]:
+                    dict_set_probs[key] = 1.0 if key == value else 0.0
+
                 try:
-                    ie.do_intervention(node, int(value))
-                    after = ie.query(connected_nodes + [node])  # Query only relevant nodes
+                    ie.do_intervention(str(node), dict_set_probs)
+                    after = ie.query()
 
                     # Check each connected node for changes in their distribution
                     for conn_node in connected_nodes:
@@ -212,7 +265,9 @@ class CausalDiscovery:
 
                         if max_value_after > uniform_probability_value and best_key_after != best_key_before:
                             dependent_vars.add(conn_node)  # Mark as dependent
-                            independent_vars.discard(conn_node)  # Remove from independents
+                            if conn_node in independent_vars:
+                                independent_vars.remove(conn_node)  # Remove from independents
+                                print(f"Link removed: {node} -> {conn_node}")
                             change_detected = True
                             causal_relationships.append((node, conn_node))  # Ensure this is a 2-tuple
 
@@ -224,10 +279,9 @@ class CausalDiscovery:
                     if max_value_after > uniform_probability_value and best_key_after != best_key_before:
                         change_detected = True
 
+                    ie.reset_do(str(node))
                 except Exception as e:
-                    # Log the error
-                    print(f"Error during intervention on {node} with value {value}: {str(e)}")
-                    pass
+                    print(f'{node} = {value}, {e}')
 
             if change_detected:
                 dependent_vars.add(node)  # Mark as dependent
@@ -437,9 +491,16 @@ def inference_function(observation: Dict, ie: InferenceEngine, possible_reward_v
 
     for feature, value in observation.items():
         try:
-            ie.do_intervention(feature, int(value))
+            print(feature, value)
+            unique_values = ie.query()[feature].keys()
+            dict_set_probs = {}
+            for key in unique_values:
+                dict_set_probs[key] = 1.0 if key == value else 0.0
+            print(dict_set_probs)
+            ie.do_intervention(feature, value)
+            print(f'do({feature}) = {value}')
         except Exception as e:
-            pass
+            print(f"Error during intervention on {feature} with value {value}: {str(e)}")
 
     for value_reward in possible_reward_values:
         probabilities_action_feature = ie.query({f'{reward_feature}': value_reward})[action_feature]
@@ -448,8 +509,8 @@ def inference_function(observation: Dict, ie: InferenceEngine, possible_reward_v
     for feature, value in observation.items():
         try:
             ie.reset_do(feature)
-        except:
-            pass
+        except Exception as e:
+            print(f"Error during reset intervention on {feature} with value {value}: {str(e)}")
 
     return reward_action_values
 

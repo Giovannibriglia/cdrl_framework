@@ -162,7 +162,7 @@ class VMASTrainer:
             steps = 0
             initial_time = time.time()
             while not any(dones):
-                print(observations['agent_0'])
+
                 if self.n_environments == 1:
                     actions = [self.algos[i].choose_action(observations[f'agent_{i}'][0]) for i in
                                range(self.n_agents)]

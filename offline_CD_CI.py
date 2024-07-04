@@ -55,8 +55,8 @@ def _rescale_value(kind: str, value: float | int):
         intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
         # print('reward bins: ', n)
     elif kind == 'DX' or kind == 'DY':
-        max_value = -1
-        min_value = +1  # -self.x_semidim * 2 if kind == 'DX' else -self.y_semidim * 2
+        max_value = +1
+        min_value = -1  # -self.x_semidim * 2 if kind == 'DX' else -self.y_semidim * 2
         # n = 10 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
         intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
         # print('DX-DY bins: ', n)
@@ -114,7 +114,7 @@ def get_new_df(dataframe: pd.DataFrame):
                 kind = 'DY'
             elif 'reward' in col:
                 kind = 'reward'
-            elif 'pX' in col:
+            elif 'PX' in col:
                 kind = 'posX'
             elif 'PY' in col:
                 kind = 'posY'
@@ -190,7 +190,7 @@ if __name__ == '__main__':
     new_df = get_new_df(df)
 
     cd = CausalDiscovery(new_df, f'navigation/causal_knowledge/offline/navigation', f'agent{agent_n}_{obs}')
-    cd.training(cd_algo='pc')
+    cd.training(cd_algo='mario')
     causal_graph = cd.return_causal_graph()
     df_for_causality = cd.return_df()
 
