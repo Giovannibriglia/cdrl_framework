@@ -1,13 +1,4 @@
 
-'simulation_config':
-  'task': 'navigation'
-  'n_episodes': 2
-  'n_agents': 4
-  'max_steps_env': 1000
-  'n_environments': 2
-  'observability': 'pomdp' # 'mdp'
-  'n_sensors': 8
-
 'algo_config':
   'name': 'qlearning'
   'epsilon_start': 1.0

@@ -96,7 +96,7 @@ class Causality:
                  continuous_actions: bool = False, seed: int = 42):
 
         self.env = env
-        self.action_space_size = self.env.action_space['agent_0'].n_bins
+        self.action_space_size = env.action_space[f'agent_{agent_id}'].n
         self.agent_id = agent_id
         self.scenario = 'navigation' + f'_agent_{self.agent_id}'
         self.continuous_actions = continuous_actions
@@ -157,7 +157,7 @@ class Causality:
                 else:
                     self.cd.add_data(df_causality)
 
-                self.cd.training()
+                self.cd.training(cd_algo='pc')
 
                 causal_graph = self.cd.return_causal_graph()
                 df_for_ci = self.cd.return_df()
@@ -210,7 +210,7 @@ class Causality:
         else:
             obs_dict = {key: obs[n] for n, key in enumerate(self.obs_features)}
             reward_action_values = self.ci.get_rewards_actions_values(obs_dict, self.online_ci)
-            print('Reward-action-values causal inference: ', reward_action_values)
+            # print('Reward-action-values causal inference: ', reward_action_values)
             return reward_action_values
 
 
@@ -273,12 +273,12 @@ class QLearningAgent:
 
     def choose_action(self, state: Tensor):
         if self.if_causality:
-            reward_action_values = self.causality_obj.action_filter(state)
+            action_reward_values = self.causality_obj.action_filter(state)
         else:
-            reward_action_values = {key: 1 / self.action_space_size for key in range(self.action_space_size)}
+            action_reward_values = {key: 1 / self.action_space_size for key in range(self.action_space_size)}
 
         if random.uniform(0.0, 1.0) < self.epsilon:
-            random_action = exploration_action(reward_action_values)
+            random_action = exploration_action(action_reward_values)
             # print('exploration', reward_action_values, random_action)
             return torch.tensor([random_action], device=self.device)
         else:

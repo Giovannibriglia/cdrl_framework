@@ -234,7 +234,7 @@ class CausalDiscovery:
 
         # Initial query to get the baseline distributions
         before = ie.query()
-
+        print('Start causality assessment...')
         # Iterate over each node in the graph
         pbar = tqdm(graph.nodes, desc=f'{self.env_name} nodes')
         for node in pbar:
@@ -361,6 +361,7 @@ class CausalInferenceForRL:
     def __init__(self, df: pd.DataFrame = None, causal_graph: StructureModel = None, causal_table: pd.DataFrame = None,
                  dir_name: str = None, env_name: str = None):
 
+        self.unique_values_df = None
         self.action_space_size = None
         self.action_column = None
         self.reward_column = None
@@ -395,8 +396,8 @@ class CausalInferenceForRL:
         self.reward_column = [s for s in self.df.columns.to_list() if 'reward' in s][0]
         self.action_column = [s for s in self.df.columns.to_list() if 'action' in s][0]
 
+        self.unique_values_df = {col: self.df[col].unique().tolist() for col in self.df.columns}
         self.action_space_size = int(max(self.df[self.action_column].unique()))
-
         self.possible_reward_values = self.df[self.reward_column].unique()
 
         for col in self.df.columns:
@@ -404,27 +405,52 @@ class CausalInferenceForRL:
 
         self.causal_graph = new_graph
 
-        print('bayesian network definition...')
-        self.bn = BayesianNetwork(self.causal_graph)
-        self.bn = self.bn.fit_node_states_and_cpds(self.df)
+        try:
+            # print('bayesian network definition...')
+            self.bn = BayesianNetwork(self.causal_graph)
+            # print('bayesian network fitting...')
+            self.bn = self.bn.fit_node_states_and_cpds(self.df)
 
-        bad_nodes = [node for node in self.bn.nodes if not re.match("^[0-9a-zA-Z_]+$", node)]
-        if bad_nodes:
-            print('Bad nodes: ', bad_nodes)
-        print('inference engine definition...')
-        self.ie = InferenceEngine(self.bn)
-        """except:
+            bad_nodes = [node for node in self.bn.nodes if not re.match("^[0-9a-zA-Z_]+$", node)]
+            if bad_nodes:
+                print('Bad nodes: ', bad_nodes)
+            # print('inference engine definition...')
+            self.ie = InferenceEngine(self.bn)
+        except:
             self.bn = None
-            self.ie = None"""
+            self.ie = None
 
     def get_rewards_actions_values(self, observation: Dict, online: bool) -> dict:
 
+        def _compute_averaged_mean(input_dict):
+
+            def _rescale_reward(past_value: float) -> float:
+                old_max = max(self.unique_values_df[self.reward_column])
+                old_min = min(self.unique_values_df[self.reward_column])
+                new_max = 1
+                new_min = 0
+
+                new_value = new_min + ((past_value - old_min) / (old_max - old_min)) * (new_max - new_min)
+                return new_value
+
+            averaged_mean_dict = {}
+            for key_action, dict_rewards in input_dict.items():
+                reward_values = list(dict_rewards.keys())
+                reward_values_prob = list(dict_rewards.values())
+
+                average_weighted_reward = sum(
+                    [reward_values[n] * reward_values_prob[n] for n in range(len(dict_rewards))])
+                averaged_mean_dict[key_action] = round(average_weighted_reward, 3)
+
+            return averaged_mean_dict
+
         if online:  # online causal inference
             if self.bn is not None and self.ie is not None:
-                print('online bn')
-                reward_action_values = inference_function(observation, self.ie, self.possible_reward_values,
-                                                          self.reward_column, self.action_column)
-                return reward_action_values
+                # print('online bn')
+                action_reward_values = inference_function(observation, self.ie, self.reward_column, self.action_column,
+                                                          self.unique_values_df)
+                weighted_average_act_rew_values = _compute_averaged_mean(action_reward_values)
+                return weighted_average_act_rew_values
             else:
                 uniform_prob = 1 / self.action_space_size
                 return {key: uniform_prob for key in range(self.action_space_size)}
@@ -433,7 +459,7 @@ class CausalInferenceForRL:
                 filtered_df = self.causal_table.copy()
                 for feature, value in observation.items():
                     filtered_df = filtered_df[filtered_df[feature] == value]
-
+                print('**** METTI A POSTO NEL CASO ***')
                 if not filtered_df.empty:
                     return filtered_df['reward_action_values'].values[0]
                 else:
@@ -473,38 +499,82 @@ def process_chunk(chunk: Tuple, df: pd.DataFrame, causal_graph: StructureModel):
     pbar = tqdm(chunk, desc=f'Preparing causal table', leave=True)
     col_reward = [s for s in df.columns.to_list() if 'reward' in s][0]
     col_action = [s for s in df.columns.to_list() if 'action' in s][0]
-    possible_reward_values = df[col_reward].unique()
+    unique_values_df = {col: df[col].unique().tolist() for col in df.columns}
     for comb in pbar:
-        reward_action_values = inference_function(comb, ie, possible_reward_values, col_reward, col_action)
+        reward_action_values = inference_function(comb, ie, col_reward, col_action, unique_values_df)
         new_row = comb.copy()
         new_row[COL_REWARD_ACTION_VALUES] = reward_action_values
-        print(new_row)
         rows.append(new_row)
     return rows
 
 
-def inference_function(observation: Dict, ie: InferenceEngine, possible_reward_values: List, reward_col: str,
-                       action_col: str):
-    reward_feature = reward_col
-    action_feature = action_col
-    reward_action_values = {}
+def inference_function(observation: Dict, ie: InferenceEngine, reward_col: str,
+                       action_col: str, unique_values_df: Dict):
+    def _find_nearest(array, val):
+        array = np.asarray(array)
+        idx = (np.abs(array - val)).argmin()
+        return array[idx]
+
+    def _reverse_dict(d):
+        reversed_d = {}
+        for key, value in d.items():
+            if isinstance(value, dict):
+                reversed_value = _reverse_dict(value)
+                for subkey, subvalue in reversed_value.items():
+                    if subkey not in reversed_d:
+                        reversed_d[subkey] = {}
+                    reversed_d[subkey][key] = subvalue
+            else:
+                reversed_d[key] = value
+        return reversed_d
+
+    def _create_action_reward_values():
+        action_reward_values = {}
+
+        for value_action in unique_values_df[action_col]:
+            try:
+                action_reward_values[value_action] = ie.query({action_col: value_action})[reward_col]
+            except Exception as e_action:
+                print(f"Exception occurred while querying by action_col for value {value_action}: {e_action}")
+
+                # Try querying with reward_col if action_col fails
+                try:
+                    reward_action_values = {}
+                    for value_reward in unique_values_df[reward_col]:
+                        try:
+                            reward_action_values[value_reward] = ie.query({reward_col: value_reward})[action_col]
+                        except Exception as e_reward:
+                            print(
+                                f"Exception occurred while querying by reward_col for value {value_reward}: {e_reward}")
+
+                    # Reverse the dictionary to get action_reward_values if reward_action_values was successful
+                    if reward_action_values:
+                        action_reward_values = _reverse_dict(reward_action_values)
+                except Exception as e:
+                    print(f"Exception occurred while creating reward_action_values: {e}")
+
+        return action_reward_values
 
     for feature, value in observation.items():
         try:
-            print(feature, value)
-            unique_values = ie.query()[feature].keys()
+            unique_values_feature = unique_values_df[feature]
             dict_set_probs = {}
-            for key in unique_values:
-                dict_set_probs[key] = 1.0 if key == value else 0.0
-            print(dict_set_probs)
-            ie.do_intervention(feature, value)
-            print(f'do({feature}) = {value}')
-        except Exception as e:
-            print(f"Error during intervention on {feature} with value {value}: {str(e)}")
 
-    for value_reward in possible_reward_values:
-        probabilities_action_feature = ie.query({f'{reward_feature}': value_reward})[action_feature]
-        reward_action_values[value_reward] = probabilities_action_feature  # {reward_value: dict_action{value:prob}, ..}
+            if value in unique_values_feature:
+                for key in unique_values_feature:
+                    dict_set_probs[key] = 1.0 if key == value else 0.0
+            else:
+                nearest_key = _find_nearest(unique_values_feature, value)
+                for key in unique_values_feature:
+                    dict_set_probs[key] = 1.0 if key == nearest_key else 0.0
+
+            ie.do_intervention(feature, dict_set_probs)
+            # print(f'do({feature} = {value})')
+        except Exception as e:
+            # print(f"Error during intervention on {feature} with value {value}: {str(e)}")
+            pass
+
+    action_reward_values = _create_action_reward_values()
 
     for feature, value in observation.items():
         try:
@@ -512,7 +582,7 @@ def inference_function(observation: Dict, ie: InferenceEngine, possible_reward_v
         except Exception as e:
             print(f"Error during reset intervention on {feature} with value {value}: {str(e)}")
 
-    return reward_action_values
+    return action_reward_values
 
 
 def plot_reward(values, name):

@@ -26,16 +26,6 @@ def _rescale_value(kind: str, value: float | int):
         elif value >= intervals[-1]:
             return intervals[-1]
 
-    """def discretize_value(value, intervals):
-        # it returns the index of the interval where the value fits.
-        for i in range(len(intervals) - 1):
-            if intervals[i] <= value < intervals[i + 1]:
-                return i
-        if value < intervals[0]:
-            return 0
-        elif value >= intervals[-1]:
-            return len(intervals) - 2"""
-
     def create_intervals(min_val, max_val, n_intervals, scale='linear'):
         if scale == 'exponential':
             # Generate n_intervals points using exponential scaling
@@ -49,7 +39,7 @@ def _rescale_value(kind: str, value: float | int):
         return intervals
 
     if kind == 'reward':
-        max_value = 1
+        max_value = 0.1
         min_value = -1 * 4 - max(0.5, 0.5)
         # n = 10
         intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
@@ -99,7 +89,7 @@ def get_new_df(dataframe: pd.DataFrame):
     agent_X_columns = [s for s in dataframe.columns.to_list() if f'agent_{agent_n}' in s]
 
     dataframe = dataframe.loc[:, agent_X_columns]
-    dataframe = group_sensor_variables(dataframe)
+    dataframe = group_variables(dataframe, 'sensor')
     std_dev = dataframe.std()
     non_zero_std_columns = std_dev[std_dev != 0].index
 
@@ -140,15 +130,27 @@ def get_new_df(dataframe: pd.DataFrame):
     return new_dataframe
 
 
-def group_sensor_variables(dataframe: pd.DataFrame) -> pd.DataFrame:
-    # Step 1: Identify sensor columns
-    sensor_columns = [col for col in dataframe.columns if 'sensor' in col]
-    # Step 2: Determine maximum sensor value per row
-    dataframe['sensor_on'] = dataframe[sensor_columns].idxmax(axis=1)
-    # Step 3: Extract sensor number from column names
-    dataframe['sensor_on'] = dataframe['sensor_on'].str.extract(r'sensor(\d+)').astype(int)
-    # Step 4: Drop original sensor columns
-    dataframe.drop(columns=sensor_columns, inplace=True)
+def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1) -> pd.DataFrame:
+    # Step 1: Identify columns to group
+    variable_columns = [col for col in dataframe.columns if variable_to_group in col]
+
+    # Step 2: Create columns for the top N variables
+    for i in range(N):
+        dataframe[f'agent_0_{variable_to_group}_on_{i}'] = None
+
+
+    # Step 3: Determine top N variable values per row
+    for index, row in dataframe.iterrows():
+        sorted_variables = row[variable_columns].sort_values(ascending=False).index
+        for i in range(N):
+            if i <= len(sorted_variables):
+                variable_number = sorted_variables[i - 1].split(variable_to_group)[1]
+                dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = int(variable_number)
+            else:
+                dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = None
+
+    # Step 4: Drop original variable columns
+    dataframe.drop(columns=variable_columns, inplace=True)
 
     return dataframe
 
@@ -182,7 +184,8 @@ list_obs = [
 ]
 
 obs_features = [f"agent_0_{feature}" for feature in
-                ['next_PX', 'next_PY', 'next_VX', 'next_VY', 'next_DX', 'next_DY', 'sensor_on']]
+                ['next_PX', 'next_PY', 'next_VX', 'next_VY', 'next_DX', 'next_DY'] +
+                [f'sensor_on_{n}' for n in range(num_sensors)]]
 
 if __name__ == '__main__':
     df = pd.read_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline_ok/df_random_{obs}_1000000.pkl')
@@ -190,7 +193,7 @@ if __name__ == '__main__':
     new_df = get_new_df(df)
 
     cd = CausalDiscovery(new_df, f'navigation/causal_knowledge/offline/navigation', f'agent{agent_n}_{obs}')
-    cd.training(cd_algo='mario')
+    cd.training(cd_algo='pc')
     causal_graph = cd.return_causal_graph()
     df_for_causality = cd.return_df()
 
@@ -202,7 +205,7 @@ if __name__ == '__main__':
         obs_dict = {key: obs[0, n].item() for n, key in enumerate(obs_features)}
         reward_action_values = ci.get_rewards_actions_values(obs_dict, online=True)
         print('\n', reward_action_values)
-    # causal_table = ci.create_causal_table()
+    """causal_table = ci.create_causal_table()
 
-    #causal_table.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline/navigation/causal_table.pkl')
-    #causal_table.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline/navigation/causal_table.xlsx')
+    causal_table.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline/navigation/causal_table.pkl')
+    causal_table.to_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline/navigation/causal_table.xlsx')"""

@@ -155,8 +155,9 @@ def _state_to_tuple(state):
     return tuple(state.cpu().numpy())
 
 
-def exploration_action(reward_action_values: Dict) -> int:
-    return random.choices(list(reward_action_values.keys()), weights=list(reward_action_values.values()), k=1)[0]
+def exploration_action(action_reward_values: Dict) -> int:
+    weights = [s/(sum(action_reward_values.values())) for s in action_reward_values.values()]
+    return random.choices(list(action_reward_values.keys()), weights=weights, k=1)[0]
 
 
 def get_rl_knowledge(filepath, agent_id):

@@ -61,7 +61,7 @@ class VMASTrainer:
                          range(self.n_training_episodes)],
                 'rl_knowledge': [[[] for _ in range(self.n_environments)] for _ in range(self.n_training_episodes)],
                 'n_collisions': [[[[] for _ in range(self.n_environments)] for _ in range(self.max_steps_env)] for _ in
-                         range(self.n_training_episodes)],
+                                 range(self.n_training_episodes)],
                 'causal_graph': None,
                 'df_causality': None,
                 'causal_table': None
@@ -75,14 +75,18 @@ class VMASTrainer:
         self.max_steps_env = int(simulation_config.get('max_steps_env', 5000))
         self.x_semidim = float(simulation_config.get('x_semidim', 1))
         self.y_semidim = float(simulation_config.get('y_semidim', 1))
-        self.n_sensors = int(simulation_config.get('n_sensors', 8))
+        self.n_sensors = int(simulation_config.get('n_sensors', 12))
+        self.continuous_actions = simulation_config.get('continuous_actions', False)
+
+        self.n_bins_discretization = simulation_config.get('n_bins_discretization', None)
+        self.n_sensors_on = simulation_config.get('n_sensors_on', None)
 
         print('Device: ', self.device)
         env = make_env(
             scenario=self.scenario,
             num_envs=self.n_environments,
             device=self.device,
-            continuous_actions=False,
+            continuous_actions=self.continuous_actions,
             dict_spaces=True,
             wrapper=self.env_wrapper,
             seed=self.seed,
@@ -91,7 +95,9 @@ class VMASTrainer:
             x_semidim=self.x_semidim,
             y_semidim=self.y_semidim,
             max_steps=self.max_steps_env,
-            n_sensors=self.n_sensors
+            n_sensors=self.n_sensors,
+            n_bins_discretization=self.n_bins_discretization,
+            n_sensors_on=self.n_sensors_on
         )
         return env
 
@@ -193,7 +199,8 @@ class VMASTrainer:
                                                  rewards[f'agent_{i}'][env_n],
                                                  next_observations[f'agent_{i}'][env_n])
                             self._update_metrics(f'agent_{i}', episode, steps, env_n, rewards[f'agent_{i}'][env_n],
-                                                 actions[i][env_n], initial_time, info[f'agent_{i}']['agent_collisions'][env_n])
+                                                 actions[i][env_n], initial_time,
+                                                 info[f'agent_{i}']['agent_collisions'][env_n])
                 steps += 1
                 observations = next_observations
 
@@ -270,13 +277,16 @@ class VMASTrainer:
                 # df_final.to_excel(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.xlsx')
 
 
-def run_simulations(path_yaml_config: str, if_rendering: bool = False):
-    with open(f'{path_yaml_config}', 'r') as file:
-        config = yaml.safe_load(file)
+def run_simulations(path_yaml_config_env: str, path_yaml_config_algo: str, if_rendering: bool = False):
+    with open(f'{path_yaml_config_env}', 'r') as file:
+        config_env = yaml.safe_load(file)
 
-    simulation_config = config.get('simulation_config')
-    algo_config = config.get('algo_config')
-    causality_config = config.get('causality_config', None)
+    with open(f'{path_yaml_config_algo}', 'r') as file:
+        config_algo = yaml.safe_load(file)
+
+    simulation_config = config_env.get('simulation_config')
+    algo_config = config_algo.get('algo_config')
+    causality_config = config_algo.get('causality_config', None)
 
     task = simulation_config.get('task', 'navigation')
     observability = simulation_config.get('observability', 'mdp')
