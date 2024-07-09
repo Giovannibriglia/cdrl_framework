@@ -15,11 +15,8 @@ N_ROWS = 200000
 
 show_progress_cd = False
 
-DIR_SAVING = f'{GLOBAL_PATH_REPO}/navigation/additional_assessments/causal_graphs'
-
 
 def run_causal_discovery(df: pd.DataFrame, n_bins: int, n_sensors: int, cd_algo: str = 'pc'):
-
     df_copy = df.copy()
     new_df = discretize_df(df_copy, n_bins, n_sensors, x_semidim, y_semidim)
 
@@ -35,6 +32,9 @@ def run_causal_discovery(df: pd.DataFrame, n_bins: int, n_sensors: int, cd_algo:
         'causal_graph': causal_graph,
         'computation_time_sec': computation_time
     }
+
+    DIR_SAVING = f'{GLOBAL_PATH_REPO}/navigation/additional_assessments/causal_graphs_{cd_algo}'
+    os.makedirs(DIR_SAVING, exist_ok=True)
 
     with open(f'{DIR_SAVING}/causal_graph_{n_bins}bins_{n_sensors}sensors.json', 'w') as json_file:
         json.dump(result, json_file)
@@ -54,12 +54,15 @@ def run_sensitive_analysis(df: pd.DataFrame, list_n_bins: list, list_n_sensors: 
         pool.starmap(run_causal_discovery, [(df, n_bins, n_sensors, cd_algo) for (n_bins, n_sensors) in combinations])
 
 
-if __name__ == '__main__':
+def launch():
+    multiprocessing.set_start_method('spawn')
     CD_ALGO = input('Causal discovery algorithm: ')
-    DIR_SAVING += '_' + CD_ALGO
-    os.makedirs(DIR_SAVING, exist_ok=True)
     N_BINS_CONSIDERED = [5, 10, 15, 20, 30, 50, 100]
     N_SENSORS_CONSIDERED = [1, 3, 5, 8]
     dataframe = pd.read_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline_ok/df_random_mdp_1000000.pkl')
     dataframe = dataframe.head(N_ROWS)
     run_sensitive_analysis(dataframe, N_BINS_CONSIDERED, N_SENSORS_CONSIDERED, CD_ALGO)
+
+
+if __name__ == '__main__':
+    launch()

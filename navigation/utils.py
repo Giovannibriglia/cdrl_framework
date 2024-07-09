@@ -4,7 +4,6 @@ from itertools import combinations
 from typing import Dict
 import random
 import json
-import ijson
 import os
 
 import networkx as nx
@@ -42,7 +41,7 @@ def detach_dict(d, func=detach_and_cpu):
 " ******************************************************************************************************************** "
 
 
-def define_causal_graph(list_for_causal_graph: list) -> StructureModel:
+def list_to_causal_graph(list_for_causal_graph: list) -> StructureModel:
     # Create a StructureModel
     sm = StructureModel()
 
@@ -260,6 +259,38 @@ def gdda(graph1, graph2, k=3):
     return gdda_value
 
 
+def evaluate_causal_graphs(json_file_folder: str):
+    results = []
+
+    for file_name in os.listdir(json_file_folder):
+        if file_name.endswith('.json'):
+            with open(os.path.join(json_file_folder, file_name), 'r') as file:
+                data = json.load(file)
+                graphs = data['causal_graph']
+                time = data['time']
+
+                for i in range(len(graphs) - 1):
+                    G1 = nx.DiGraph(graphs[i])
+                    G2 = nx.DiGraph(graphs[i + 1])
+
+                    metrics = {
+                        "File Name": file_name,
+                        "Time": time,
+                        "SHD": shd(G1, G2),
+                        "GED": ged(G1, G2),
+                        "Jaccard Similarity": jaccard_similarity(G1, G2),
+                        "Degree Distribution Similarity (KS Statistic)": degree_distribution_similarity(G1, G2),
+                        "Clustering Coefficient Similarity": clustering_coefficient_similarity(G1, G2),
+                        "Kullback-Leibler Divergence": kullback_leibler_divergence(G1, G2),
+                        "GDDA": gdda(G1, G2)
+                    }
+
+                    results.append(metrics)
+
+    results_df = pd.DataFrame(results)
+    return results_df
+
+
 " ******************************************************************************************************************** "
 
 
@@ -352,7 +383,8 @@ def discretize_df(dataframe: pd.DataFrame, n_bins: int, n_sensor_to_consider: in
                 kind = None
 
             if kind:
-                new_dataframe[col] = df_filtered[col].apply(lambda value: _rescale_value(kind, value, n_bins, x_semidim, y_semidim))
+                new_dataframe[col] = df_filtered[col].apply(
+                    lambda value: _rescale_value(kind, value, n_bins, x_semidim, y_semidim))
             else:
                 new_dataframe[col] = df_filtered[col]
         else:
