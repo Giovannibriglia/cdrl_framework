@@ -136,6 +136,7 @@ class Causality:
 
     def update(self, obs: Tensor = None, action: float = None, reward: float = None,
                next_obs: Tensor = None):
+
         if self.online_cd:  # online
             if self.dict_for_causality is not None:
                 if obs is not None and reward is not None and action is not None and next_obs is not None:
@@ -146,7 +147,7 @@ class Causality:
                 self._initialize_dict(obs)
 
             if len(self.dict_for_causality[next(iter(self.dict_for_causality))]) > self.steps_for_causality_update:
-                # print('update')
+                print(f'cd agent {self.agent_id}')
                 dict_detached = detach_dict(self.dict_for_causality)
                 df_causality = pd.DataFrame(dict_detached)
 
@@ -163,8 +164,9 @@ class Causality:
                 df_for_ci = self.cd.return_df()
 
                 if self.ci is None:
-                    self.ci = CausalInferenceForRL(df_for_ci, causal_graph, dir_name=f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge',
-                                              env_name=self.scenario)
+                    self.ci = CausalInferenceForRL(df_for_ci, causal_graph,
+                                                   dir_name=f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge',
+                                                   env_name=self.scenario)
                 else:
                     self.ci.add_data(df_for_ci, causal_graph)
 
@@ -209,9 +211,9 @@ class Causality:
             return {key: 1 / self.action_space_size for key in range(self.action_space_size)}
         else:
             obs_dict = {key: obs[n] for n, key in enumerate(self.obs_features)}
-            reward_action_values = self.ci.get_rewards_actions_values(obs_dict, self.online_ci)
-            # print('Reward-action-values causal inference: ', reward_action_values)
-            return reward_action_values
+            action_reward_values = self.ci.get_actions_rewards_values(obs_dict, self.online_ci)
+            # print('Reward-action-values causal inference: ', action_reward_values)
+            return action_reward_values
 
 
 class QLearningAgent:
@@ -240,7 +242,7 @@ class QLearningAgent:
             self.name = f'causal_{name}'
             self.online_causality = causality_config.get('online_ci', True)
             self.name += '_online' if self.online_causality else '_offline'
-            self.if_causality = True if self.agent_id == 0 else False
+            self.if_causality = True
             self._setup_causality(causality_config)
 
         self.scenario = scenario
@@ -440,6 +442,7 @@ class DQNAgent:
         return action
 
     def update(self, obs: Tensor = None, action: float = None, reward: float = None, next_obs: Tensor = None):
+
         if self.if_causality:
             self.causality_obj.update(obs, action, reward, next_obs)
 

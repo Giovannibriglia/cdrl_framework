@@ -31,8 +31,11 @@ class CausalDiscovery:
         self.notears_graph = None
         self.df = None
         self.env_name = env_name
-        self.dir_save = f'{dir_name}/{self.env_name}'
-        os.makedirs(self.dir_save, exist_ok=True)
+        if dir_name is not None or env_name is not None:
+            self.dir_save = f'{dir_name}/{self.env_name}'
+            os.makedirs(self.dir_save, exist_ok=True)
+        else:
+            self.dir_save = None
         random.seed(42)
         np.random.seed(42)
 
@@ -46,16 +49,17 @@ class CausalDiscovery:
 
         reward_col = [s for s in self.df.columns.to_list() if 'reward' in s][0]
 
-        self.df.to_pickle(f'{self.dir_save}/df_{len(self.df)}.pkl')
-        # plot_reward(self.df[reward_col], reward_col)
+        if self.dir_save is not None:
+            self.df.to_pickle(f'{self.dir_save}/df_{len(self.df)}.pkl')
+
         self.features_names = self.df.columns.to_list()
 
         for col in self.df.columns:
             self.df[str(col)] = self.df[str(col)].astype(str).str.replace(',', '').astype(float)
 
-    def training(self, cd_algo: str = 'mario'):
+    def training(self, cd_algo: str = 'mario', show_progress: bool = False):
         if cd_algo == 'pc':
-            causal_relationships = self.use_pc()
+            causal_relationships = self.use_pc(show_progress)
             sm = StructureModel()
             sm.add_edges_from([(node1, node2) for node1, node2 in causal_relationships])
             self.causal_graph = sm
@@ -79,7 +83,7 @@ class CausalDiscovery:
 
                 # print('do-calculus-1...')
                 # assessment of the no-tears graph
-                causal_relationships, _, _ = self._causality_assessment(self.notears_graph, self.df)
+                causal_relationships, _, _ = self._causality_assessment(self.notears_graph, self.df, show_progress)
 
                 sm = StructureModel()
                 sm.add_edges_from([(node1, node2) for node1, node2 in causal_relationships])
@@ -212,7 +216,7 @@ class CausalDiscovery:
 
         return sm
 
-    def _causality_assessment(self, graph: StructureModel, df: pd.DataFrame) -> Tuple[List[Tuple], List, List]:
+    def _causality_assessment(self, graph: StructureModel, df: pd.DataFrame, show_progress: bool = False) -> Tuple[List[Tuple], List, List]:
         print('Bayesian network definition...')
         bn = BayesianNetwork(graph)
         print('Bayesian network fitting...')
@@ -235,8 +239,11 @@ class CausalDiscovery:
         # Initial query to get the baseline distributions
         before = ie.query()
         print('Start causality assessment...')
-        # Iterate over each node in the graph
-        pbar = tqdm(graph.nodes, desc=f'{self.env_name} nodes')
+
+        if show_progress:
+            pbar = tqdm(graph.nodes, desc=f'{self.env_name} nodes')
+        else:
+            pbar = graph.nodes
         for node in pbar:
             if node in dependent_vars:
                 continue  # Skip nodes already marked as dependent
@@ -318,24 +325,25 @@ class CausalDiscovery:
 
         structure_to_save = [(x[0], x[1]) for x in sm.edges]
 
-        if if_causal:
-            plt.savefig(f'{self.dir_save}/causal_graph{len(self.df)}.png')
+        if self.dir_save is not None:
+            if if_causal:
+                plt.savefig(f'{self.dir_save}/causal_graph{len(self.df)}.png')
 
-            with open(f'{self.dir_save}/causal_structure{len(self.df)}.json', 'w') as json_file:
-                json.dump(structure_to_save, json_file)
-        else:
-            plt.savefig(f'{self.dir_save}/notears_graph.png')
+                with open(f'{self.dir_save}/causal_structure{len(self.df)}.json', 'w') as json_file:
+                    json.dump(structure_to_save, json_file)
+            else:
+                plt.savefig(f'{self.dir_save}/notears_graph.png')
 
-            with open(f'{self.dir_save}/notears_structure.json', 'w') as json_file:
-                json.dump(structure_to_save, json_file)
+                with open(f'{self.dir_save}/notears_structure.json', 'w') as json_file:
+                    json.dump(structure_to_save, json_file)
 
         # plt.show()
         plt.close(fig)
 
-    def use_pc(self):
+    def use_pc(self, show_progress: bool = False):
         data = self.df.to_numpy()
         labels = [f'{col}' for i, col in enumerate(self.features_names)]
-        cg = pc(data, show_progress=True)
+        cg = pc(data, show_progress=show_progress)
 
         # Create a NetworkX graph
         G = nx.DiGraph()
@@ -420,7 +428,7 @@ class CausalInferenceForRL:
             self.bn = None
             self.ie = None
 
-    def get_rewards_actions_values(self, observation: Dict, online: bool) -> dict:
+    def get_actions_rewards_values(self, observation: Dict, online: bool) -> dict:
 
         def _compute_averaged_mean(input_dict):
 

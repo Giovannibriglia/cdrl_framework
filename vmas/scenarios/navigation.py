@@ -30,7 +30,7 @@ class Scenario(BaseScenario):
         self.n_sensors = kwargs.get("n_sensors", 12)
 
         self.n_bins_discretization = kwargs.get('n_bins_discretization', None)
-        self.n_sensors_to_consider = kwargs.get('n_sensors_on')
+        self.n_sensors_to_consider = kwargs.get('n_sensors_on', None)
         "*************************************************************************************************************"
         self.agents_with_same_goal = kwargs.get("agents_with_same_goal", 1)
         self.split_goals = kwargs.get("split_goals", False)

@@ -1,9 +1,7 @@
-import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from torch import tensor
 import torch
-from navigation.utils import IQM_mean_std
+from navigation.utils import discretize_df, get_df_boundaries
 from path_repo import GLOBAL_PATH_REPO
 from navigation.causality_algos import CausalDiscovery, CausalInferenceForRL
 
@@ -12,158 +10,6 @@ agent_n = 0
 n_rows = 50000
 obs = 'mdp'
 num_sensors = 1
-
-
-def _rescale_value(kind: str, value: float | int):
-    def discretize_value(value, intervals):
-        # Find the interval where the value fits
-        for i in range(len(intervals) - 1):
-            if intervals[i] <= value < intervals[i + 1]:
-                return (intervals[i] + intervals[i + 1]) / 2
-        # Handle the edge cases
-        if value < intervals[0]:
-            return intervals[0]
-        elif value >= intervals[-1]:
-            return intervals[-1]
-
-    def create_intervals(min_val, max_val, n_intervals, scale='linear'):
-        if scale == 'exponential':
-            # Generate n_intervals points using exponential scaling
-            intervals = np.logspace(0, 1, n_intervals, base=10) - 1
-            intervals = intervals / (10 - 1)  # Normalize to range 0-1
-            intervals = min_val + (max_val - min_val) * intervals
-        elif scale == 'linear':
-            intervals = np.linspace(min_val, max_val, n_intervals)
-        else:
-            raise ValueError("Unsupported scale type. Use 'exponential' or 'linear'.")
-        return intervals
-
-    if kind == 'reward':
-        max_value = 0.1
-        min_value = -1 * 4 - max(0.5, 0.5)
-        # n = 10
-        intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
-        # print('reward bins: ', n)
-    elif kind == 'DX' or kind == 'DY':
-        max_value = +1
-        min_value = -1  # -self.x_semidim * 2 if kind == 'DX' else -self.y_semidim * 2
-        # n = 10 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
-        intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
-        # print('DX-DY bins: ', n)
-    elif kind == 'VX' or kind == 'VY':
-        max_value = 0.5
-        min_value = -0.5
-        # n = 5 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'DX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
-        intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
-        # print('VX-VY bins: ', n)
-    elif kind == 'sensor':
-        max_value = 0.35
-        min_value = 0.0
-        # n = 5
-        intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
-        # print('sensor bins: ', n)
-    elif kind == 'posX' or kind == 'posY':
-        max_value = 0.5 if kind == 'posX' else 0.5
-        min_value = -0.5 if kind == 'posX' else -0.5
-        # n = 20 # int((self.x_semidim/0.05)**2 * self.x_semidim*2) if kind == 'posX' else int((self.y_semidim/0.05)**2 * self.y_semidim*2)
-        intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
-        # print('posX-posY bins: ', n)
-
-    """if kind == 'sensor':
-        th = 0.7
-        if value >= th:
-            rescaled_value = 1
-        elif 0 < value < th:
-            rescaled_value = 0.5
-        else:
-            rescaled_value = 0
-    else:"""
-    index = discretize_value(value, intervals)
-    rescaled_value = index
-    # rescaled_value = int((index / (len(intervals) - 2)) * (n - 1))
-
-    return rescaled_value
-
-
-def get_new_df(dataframe: pd.DataFrame):
-    agent_X_columns = [s for s in dataframe.columns.to_list() if f'agent_{agent_n}' in s]
-
-    dataframe = dataframe.loc[:, agent_X_columns]
-    dataframe = group_variables(dataframe, 'sensor')
-    std_dev = dataframe.std()
-    non_zero_std_columns = std_dev[std_dev != 0].index
-
-    df_filtered = dataframe[non_zero_std_columns]
-
-    new_dataframe = pd.DataFrame(columns=df_filtered.columns, index=df_filtered.index)
-    for col in df_filtered.columns:
-        if 'action' not in col:
-            if 'DX' in col:
-                kind = 'DX'
-            elif 'DY' in col:
-                kind = 'DY'
-            elif 'reward' in col:
-                kind = 'reward'
-            elif 'PX' in col:
-                kind = 'posX'
-            elif 'PY' in col:
-                kind = 'posY'
-            elif 'VX' in col:
-                kind = 'VX'
-            elif 'VY' in col:
-                kind = 'VY'
-            # elif 'sensor' in col:
-            #    kind = 'sensor'
-            else:
-                kind = None
-
-            if kind:
-                new_dataframe[col] = df_filtered[col].apply(lambda value: _rescale_value(kind, value))
-            else:
-                new_dataframe[col] = df_filtered[col]
-        else:
-            new_dataframe[col] = df_filtered[col]
-
-    # print(new_dataframe['agent_0_next_DX'].std())
-    # new_dataframe = new_dataframe.loc[:, new_dataframe.std() != 0]
-
-    return new_dataframe
-
-
-def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1) -> pd.DataFrame:
-    # Step 1: Identify columns to group
-    variable_columns = [col for col in dataframe.columns if variable_to_group in col]
-
-    # Step 2: Create columns for the top N variables
-    for i in range(N):
-        dataframe[f'agent_0_{variable_to_group}_on_{i}'] = None
-
-
-    # Step 3: Determine top N variable values per row
-    for index, row in dataframe.iterrows():
-        sorted_variables = row[variable_columns].sort_values(ascending=False).index
-        for i in range(N):
-            if i <= len(sorted_variables):
-                variable_number = sorted_variables[i - 1].split(variable_to_group)[1]
-                dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = int(variable_number)
-            else:
-                dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = None
-
-    # Step 4: Drop original variable columns
-    dataframe.drop(columns=variable_columns, inplace=True)
-
-    return dataframe
-
-
-def get_boundaries(dataframe: pd.DataFrame):
-    for col in dataframe.columns.to_list():
-        iqm_mean, iqm_std = IQM_mean_std(dataframe[col])
-        print(
-            f'{col} -> max: {dataframe[col].max()}, min: {dataframe[col].min()}, mean: {dataframe[col].mean()}, std: {dataframe[col].std()}, iqm_mean: {iqm_mean}, iqm_std: {iqm_std}')
-
-    fig = plt.figure(dpi=500, figsize=(16, 9))
-    plt.plot(dataframe['agent_0_reward'])
-    plt.show()
 
 
 list_obs = [
@@ -190,7 +36,12 @@ obs_features = [f"agent_0_{feature}" for feature in
 if __name__ == '__main__':
     df = pd.read_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline_ok/df_random_{obs}_1000000.pkl')
     df = df.head(n_rows)
-    new_df = get_new_df(df)
+
+    agent_X_columns = [s for s in df.columns.to_list() if f'agent_{agent_n}' in s]
+
+    dataframe = df.loc[:, agent_X_columns]
+
+    new_df = discretize_df(df, n_bins, num_sensors, 0.5, 0.5)
 
     cd = CausalDiscovery(new_df, f'navigation/causal_knowledge/offline/navigation', f'agent{agent_n}_{obs}')
     cd.training(cd_algo='pc')
@@ -203,7 +54,7 @@ if __name__ == '__main__':
 
     for obs in list_obs:
         obs_dict = {key: obs[0, n].item() for n, key in enumerate(obs_features)}
-        reward_action_values = ci.get_rewards_actions_values(obs_dict, online=True)
+        reward_action_values = ci.get_actions_rewards_values(obs_dict, online=True)
         print('\n', reward_action_values)
     """causal_table = ci.create_causal_table()
 
