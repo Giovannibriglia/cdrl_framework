@@ -11,6 +11,8 @@ import multiprocessing
 x_semidim = 0.5
 y_semidim = 0.5
 
+N_ROWS = 200000
+
 show_progress_cd = False
 
 DIR_SAVING = f'{GLOBAL_PATH_REPO}/navigation/additional_assessments/causal_graphs'
@@ -59,5 +61,5 @@ if __name__ == '__main__':
     N_BINS_CONSIDERED = [5, 10, 15, 20, 30, 50, 100]
     N_SENSORS_CONSIDERED = [1, 3, 5, 8]
     dataframe = pd.read_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline_ok/df_random_mdp_1000000.pkl')
-
+    dataframe = dataframe.head(N_ROWS)
     run_sensitive_analysis(dataframe, N_BINS_CONSIDERED, N_SENSORS_CONSIDERED, CD_ALGO)
