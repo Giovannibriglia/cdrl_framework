@@ -11,9 +11,9 @@ import multiprocessing
 x_semidim = 0.5
 y_semidim = 0.5
 
-N_ROWS = 200000
+N_ROWS = 20000
 
-show_progress_cd = False
+show_progress_cd = True
 
 
 def run_causal_discovery(df: pd.DataFrame, n_bins: int, n_sensors: int, cd_algo: str = 'pc'):
@@ -54,14 +54,17 @@ def run_sensitive_analysis(df: pd.DataFrame, list_n_bins: list, list_n_sensors: 
         pool.starmap(run_causal_discovery, [(df, n_bins, n_sensors, cd_algo) for (n_bins, n_sensors) in combinations])
 
 
-def launch():
+def launch(cd_algo: str = None):
     # Ensure the context is set only once
     if multiprocessing.get_start_method(allow_none=True) is None:
         multiprocessing.set_start_method('spawn')
 
-    CD_ALGO = input('Causal discovery algorithm: ')
-    N_BINS_CONSIDERED = [5, 10, 15, 20, 30, 50, 100]
-    N_SENSORS_CONSIDERED = [1, 3, 5, 8]
+    if cd_algo is None:
+        CD_ALGO = input('Causal discovery algorithm: ')
+    else:
+        CD_ALGO = cd_algo
+    N_BINS_CONSIDERED = [5]  # [5, 10, 15, 20, 30, 50, 100]
+    N_SENSORS_CONSIDERED = [1]  # [1, 3, 5, 8]
     dataframe = pd.read_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline_ok/df_random_mdp_1000000.pkl')
     dataframe = dataframe.head(N_ROWS)
     run_sensitive_analysis(dataframe, N_BINS_CONSIDERED, N_SENSORS_CONSIDERED, CD_ALGO)
