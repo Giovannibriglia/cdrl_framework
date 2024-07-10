@@ -55,7 +55,10 @@ def run_sensitive_analysis(df: pd.DataFrame, list_n_bins: list, list_n_sensors: 
 
 
 def launch():
-    multiprocessing.set_start_method('spawn')
+    # Ensure the context is set only once
+    if multiprocessing.get_start_method(allow_none=True) is None:
+        multiprocessing.set_start_method('spawn')
+
     CD_ALGO = input('Causal discovery algorithm: ')
     N_BINS_CONSIDERED = [5, 10, 15, 20, 30, 50, 100]
     N_SENSORS_CONSIDERED = [1, 3, 5, 8]
