@@ -341,9 +341,23 @@ class CausalDiscovery:
         plt.close(fig)
 
     def use_pc(self, show_progress: bool = False):
-        data = self.df.to_numpy()
+
+        # Clean the data
+        data = self.df.apply(lambda x: x.fillna(x.mean()), axis=0)
+        data = data.apply(lambda x: x.fillna(x.mean()), axis=0)
+        # Calculate the maximum finite value for each column
+        finite_max = data.apply(lambda x: np.max(x[np.isfinite(x)]), axis=0)
+        # Replace infinite values in each column with the corresponding maximum finite value
+        data = data.apply(lambda x: x.replace([np.inf, -np.inf], finite_max[x.name]), axis=0)
+        # Ensure no zero standard deviation
+        stddev = data.std()
+        if (stddev == 0).any():
+            stddev[stddev == 0] = np.inf  # Adjust as needed
+        # Convert the cleaned data to a numpy array
+        data_array = data.values
+
         labels = [f'{col}' for i, col in enumerate(self.features_names)]
-        cg = pc(data, show_progress=show_progress)
+        cg = pc(data_array, show_progress=show_progress)
 
         # Create a NetworkX graph
         G = nx.DiGraph()

@@ -40,7 +40,7 @@ def run_causal_discovery(df: pd.DataFrame, n_bins: int, n_sensors: int, cd_algo:
         json.dump(result, json_file)
 
     print(
-        f'Time to perform CD on df with {n_bins} bins for discretization and {n_sensors} sensors considered: {computation_time} min')
+        f'Time to perform CD on df with {n_bins} bins for discretization and {n_sensors} sensors considered: {computation_time} sec')
 
 
 def run_sensitive_analysis(df: pd.DataFrame, list_n_bins: list, list_n_sensors: list, cd_algo: str = 'pc'):
@@ -66,7 +66,11 @@ def launch(cd_algo: str = None):
     N_BINS_CONSIDERED = [5, 10, 15, 20, 30, 50, 100]
     N_SENSORS_CONSIDERED = [1, 3, 5, 8]
     dataframe = pd.read_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline_ok/df_random_mdp_1000000.pkl')
-    dataframe = dataframe.head(N_ROWS)
+
+    columns_agent0 = [s for s in dataframe.columns.to_list() if 'agent_0' in s]
+
+    dataframe = dataframe.loc[:N_ROWS, columns_agent0]
+
     run_sensitive_analysis(dataframe, N_BINS_CONSIDERED, N_SENSORS_CONSIDERED, CD_ALGO)
 
 
