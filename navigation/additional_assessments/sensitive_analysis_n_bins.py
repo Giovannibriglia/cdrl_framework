@@ -1,8 +1,7 @@
 import itertools
 import json
 import os
-import time
-from navigation.causality_algos import CausalDiscovery
+from navigation.additional_assessments.utils import run_causal_discovery
 from navigation.utils import discretize_df
 from path_repo import GLOBAL_PATH_REPO
 import pandas as pd
@@ -13,34 +12,23 @@ y_semidim = 0.5
 
 N_ROWS = 200000
 
-show_progress_cd = True
 
-
-def run_causal_discovery(df: pd.DataFrame, n_bins: int, n_sensors: int, cd_algo: str = 'pc'):
+def run(df: pd.DataFrame, n_bins: int, n_sensors: int, cd_algo: str = 'pc'):
     df_copy = df.copy()
     new_df = discretize_df(df_copy, n_bins, n_sensors, x_semidim, y_semidim)
 
-    initial_time = time.time()
-
-    cd = CausalDiscovery(new_df)
-    cd.training(cd_algo, show_progress=show_progress_cd)
-    causal_graph = cd.return_causal_graph()
-
-    computation_time = time.time() - initial_time  # in minutes
-
-    result = {
-        'causal_graph': causal_graph,
-        'computation_time_sec': computation_time
-    }
-
-    DIR_SAVING = f'{GLOBAL_PATH_REPO}/navigation/additional_assessments/causal_graphs_{cd_algo}'
+    DIR_SAVING = f'{GLOBAL_PATH_REPO}/navigation/additional_assessments/results_{cd_algo}'
     os.makedirs(DIR_SAVING, exist_ok=True)
 
-    with open(f'{DIR_SAVING}/causal_graph_{n_bins}bins_{n_sensors}sensors.json', 'w') as json_file:
-        json.dump(result, json_file)
+    result = run_causal_discovery(new_df, cd_algo)
 
-    print(
-        f'Time to perform CD on df with {n_bins} bins for discretization and {n_sensors} sensors considered: {computation_time} sec')
+    result['n_bins'] = n_bins
+    result['n_sensors'] = n_sensors
+
+    new_df.to_pickle(f'{DIR_SAVING}/df_discretized_{n_bins}bins_{n_sensors}sensors.pkl')
+
+    with open(f'{DIR_SAVING}/results_{n_bins}bins_{n_sensors}sensors.json', 'w') as json_file:
+        json.dump(result, json_file)
 
 
 def run_sensitive_analysis(df: pd.DataFrame, list_n_bins: list, list_n_sensors: list, cd_algo: str = 'pc'):
@@ -51,7 +39,7 @@ def run_sensitive_analysis(df: pd.DataFrame, list_n_bins: list, list_n_sensors: 
     chunks = [combinations[i:i + chunk_size] for i in range(0, len(combinations), chunk_size)]
 
     with multiprocessing.Pool(processes=num_chunks) as pool:
-        pool.starmap(run_causal_discovery, [(df, n_bins, n_sensors, cd_algo) for (n_bins, n_sensors) in combinations])
+        pool.starmap(run, [(df, n_bins, n_sensors, cd_algo) for (n_bins, n_sensors) in combinations])
 
 
 def launch(cd_algo: str = None):
@@ -63,8 +51,8 @@ def launch(cd_algo: str = None):
         CD_ALGO = input('Causal discovery algorithm: ')
     else:
         CD_ALGO = cd_algo
-    N_BINS_CONSIDERED = [5, 10, 15, 20, 30, 50, 100]
-    N_SENSORS_CONSIDERED = [1, 3, 5, 8]
+    N_BINS_CONSIDERED = [5, 10, 15, 20, 30, 50, 100]  # [5, 10, 15, 20, 30, 50, 100]
+    N_SENSORS_CONSIDERED = [1, 3, 5, 8]  # [1, 3, 5, 8]
     dataframe = pd.read_pickle(f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline_ok/df_random_mdp_1000000.pkl')
 
     columns_agent0 = [s for s in dataframe.columns.to_list() if 'agent_0' in s]

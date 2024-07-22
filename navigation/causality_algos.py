@@ -69,6 +69,18 @@ class CausalDiscovery:
             if_causal_graph_DAG = nx.is_directed_acyclic_graph(self.causal_graph)
             if not if_causal_graph_DAG:
                 print('**** Causal graph is not a DAG ****')
+        elif cd_algo == 'notears':
+            self.causal_graph = from_pandas(self.df, max_iter=5000, use_gpu=True)
+            self.causal_graph.remove_edges_below_threshold(0.2)
+            largest_component = max(nx.weakly_connected_components(self.causal_graph), key=len)
+            self.causal_graph = self.causal_graph.subgraph(largest_component).copy()
+            # self.notears_graph = self.generate_random_dag(self.features_names)
+            self._plot_and_save_graph(self.causal_graph, True)
+
+            if_causal_graph_DAG = nx.is_directed_acyclic_graph(self.causal_graph)
+            if not if_causal_graph_DAG:
+                print('**** Causal graph is not a DAG ****')
+
         else:
             print(f'\n{self.env_name} - structuring model through NOTEARS... {len(self.df)} timesteps')
             self.notears_graph = from_pandas(self.df, max_iter=5000, use_gpu=True)
@@ -99,83 +111,6 @@ class CausalDiscovery:
                 self.causal_graph = None
                 print(
                     f'Number of graphs: {nx.number_weakly_connected_components(self.notears_graph)},'f' DAG: {nx.is_directed_acyclic_graph(self.notears_graph)}')
-
-    """def _causality_assessment(self, graph: StructureModel, df: pd.DataFrame) -> Tuple[List[Tuple], List, List]:
-        
-        print('bayesian network definition...')
-        bn = BayesianNetwork(graph)
-        bn = bn.fit_node_states_and_cpds(df)
-
-        bad_nodes = [node for node in bn.nodes if not re.match("^[0-9a-zA-Z_]+$", node)]
-        if bad_nodes:
-            print('Bad nodes: ', bad_nodes)
-
-        ie = InferenceEngine(bn)
-
-        # Initial assumption: all nodes are independent until proven dependent
-        independent_vars = set(graph.nodes)
-        dependent_vars = set()
-        causal_relationships = []
-
-        # Precompute unique values for all nodes
-        unique_values = {node: df[node].unique() for node in graph.nodes}
-
-        # Initial query to get the baseline distributions
-        before = ie.query()
-
-        # Iterate over each node in the graph
-        pbar = tqdm(graph.nodes, desc=f'{self.env_name} nodes')
-        for node in pbar:
-            # for node in graph.nodes:
-            connected_nodes = list(self.notears_graph.neighbors(node))
-            change_detected = False
-
-            # Perform interventions on the node and observe changes in all connected nodes
-            for value in unique_values[node]:
-                #try:
-                dict_set_probs = {}
-                for key in unique_values[node]:
-                    dict_set_probs[key] = 1 if key == value else 0
-
-                ie.do_intervention(str(node), dict_set_probs)
-                after = ie.query()
-
-                # Check each connected node for changes in their distribution
-                for conn_node in connected_nodes:
-                    best_key_before, max_value_before = max(before[conn_node].items(), key=lambda x: x[1])
-                    best_key_after, max_value_after = max(after[conn_node].items(), key=lambda x: x[1])
-                    uniform_probability_value = round(1 / len(after[conn_node]), 8)
-
-                    if max_value_after > uniform_probability_value and best_key_after != best_key_before:
-                        dependent_vars.add(conn_node)  # Mark as dependent
-                        if conn_node in independent_vars:
-                            independent_vars.remove(conn_node)  # Remove from independents
-                            # print(f"Link removed: {node} -> {conn_node}")
-                        change_detected = True
-                        causal_relationships.append((node, conn_node))  # Ensure this is a 2-tuple
-
-                # Also check the intervened node itself
-                best_key_before, max_value_before = max(before[node].items(), key=lambda x: x[1])
-                best_key_after, max_value_after = max(after[node].items(), key=lambda x: x[1])
-                uniform_probability_value = round(1 / len(after[node]), 8)
-
-                if max_value_after > uniform_probability_value and best_key_after != best_key_before:
-                    change_detected = True"""
-
-    """except Exception as e:
-        # Log the error
-        print(f"CD) Error during intervention on {node} with value {value}: {str(e)}")
-        pass"""
-
-    """ie.reset_do(str(node))
-
-    if change_detected:
-        dependent_vars.add(node)  # Mark as dependent
-        if node in independent_vars:
-            independent_vars.remove(node)  # Remove from independents
-            # print(f"Link removed: {node}")
-
-        return causal_relationships, list(independent_vars), list(dependent_vars)"""
 
     def generate_random_dag(self, nodes):
         # Initialize the StructureModel
@@ -296,12 +231,15 @@ class CausalDiscovery:
 
         return causal_relationships, list(independent_vars), list(dependent_vars)
 
-    def return_causal_graph(self):
+    def return_causal_graph(self) -> nx.DiGraph:
         if self.causal_graph is not None:
-            structure_to_return = [(x[0], x[1]) for x in self.causal_graph.edges]
+            structure_to_return_list = [(x[0], x[1]) for x in self.causal_graph.edges]
+            structure_to_return = nx.DiGraph(structure_to_return_list)
             return structure_to_return
         else:
-            return self.notears_graph
+            structure_to_return_list = [(x[0], x[1]) for x in self.notears_graph.edges]
+            structure_to_return = nx.DiGraph(structure_to_return_list)
+            return structure_to_return
 
     def return_df(self):
         return self.df

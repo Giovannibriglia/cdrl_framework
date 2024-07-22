@@ -1,18 +1,19 @@
 from collections import Counter
 from decimal import Decimal
 from itertools import combinations
-from typing import Dict
+from typing import Dict, Tuple, List
 import random
 import json
 import os
-
+import re
 import networkx as nx
+import seaborn as sns
+import itertools
 import numpy as np
 import pandas as pd
 import torch
 from causalnex.structure import StructureModel
 from matplotlib import pyplot as plt
-from scipy.stats import ks_2samp, entropy
 
 from path_repo import GLOBAL_PATH_REPO
 
@@ -184,116 +185,6 @@ def get_rl_knowledge(filepath, agent_id):
 " ******************************************************************************************************************** "
 
 
-# Function to calculate Structural Hamming Distance (SHD)
-def shd(graph1, graph2):
-    edges1 = set(graph1.edges())
-    edges2 = set(graph2.edges())
-
-    # Edge additions and deletions
-    additions = edges2 - edges1
-    deletions = edges1 - edges2
-
-    # Edge reversals
-    reversals = set((v, u) for (u, v) in edges1).intersection(edges2)
-
-    shd_value = len(additions) + len(deletions) + len(reversals)
-    return shd_value
-
-
-# Placeholder for Structural Intervention Distance (SID)
-# Implementation of SID requires causal inference capabilities, not included in standard libraries
-def sid(graph1, graph2):
-    raise NotImplementedError("SID computation is not implemented")
-
-
-# Function to calculate Graph Edit Distance (GED)
-def ged(graph1, graph2):
-    return nx.graph_edit_distance(graph1, graph2)
-
-
-# Function to calculate Jaccard Similarity
-def jaccard_similarity(graph1, graph2):
-    edges1 = set(graph1.edges())
-    edges2 = set(graph2.edges())
-    intersection = edges1.intersection(edges2)
-    union = edges1.union(edges2)
-    return len(intersection) / len(union)
-
-
-# Function to calculate Degree Distribution Similarity (Kolmogorov-Smirnov)
-def degree_distribution_similarity(graph1, graph2):
-    degrees1 = [d for n, d in graph1.degree()]
-    degrees2 = [d for n, d in graph2.degree()]
-    return ks_2samp(degrees1, degrees2).statistic
-
-
-# Function to calculate Clustering Coefficient Similarity
-def clustering_coefficient_similarity(graph1, graph2):
-    cc1 = nx.average_clustering(graph1)
-    cc2 = nx.average_clustering(graph2)
-    return abs(cc1 - cc2)
-
-
-# Function to calculate Kullback-Leibler Divergence
-def kullback_leibler_divergence(graph1, graph2):
-    degrees1 = [d for n, d in graph1.degree()]
-    degrees2 = [d for n, d in graph2.degree()]
-    hist1 = np.histogram(degrees1, bins=range(max(degrees1) + 2), density=True)[0]
-    hist2 = np.histogram(degrees2, bins=range(max(degrees2) + 2), density=True)[0]
-    kl_div = entropy(hist1 + 1e-9, hist2 + 1e-9)  # Adding a small value to avoid division by zero
-    return kl_div
-
-
-# Function to calculate Graphlet Degree Distribution Agreement (GDDA)
-def gdda(graph1, graph2, k=3):
-    def count_graphlets(graph, k):
-        graphlets = [graph.subgraph(nodes).copy() for nodes in combinations(graph.nodes(), k)]
-        graphlet_degrees = [nx.degree_histogram(graphlet) for graphlet in graphlets]
-        return Counter(tuple(map(tuple, graphlet_degrees)))
-
-    count1 = count_graphlets(graph1, k)
-    count2 = count_graphlets(graph2, k)
-
-    all_graphlets = set(count1.keys()).union(set(count2.keys()))
-    gdda_value = sum(abs(count1[g] - count2[g]) for g in all_graphlets)
-    return gdda_value
-
-
-def evaluate_causal_graphs(json_file_folder: str):
-    results = []
-
-    for file_name in os.listdir(json_file_folder):
-        if file_name.endswith('.json'):
-            with open(os.path.join(json_file_folder, file_name), 'r') as file:
-                data = json.load(file)
-                graphs = data['causal_graph']
-                time = data['time']
-
-                for i in range(len(graphs) - 1):
-                    G1 = nx.DiGraph(graphs[i])
-                    G2 = nx.DiGraph(graphs[i + 1])
-
-                    metrics = {
-                        "File Name": file_name,
-                        "Time": time,
-                        "SHD": shd(G1, G2),
-                        "GED": ged(G1, G2),
-                        "Jaccard Similarity": jaccard_similarity(G1, G2),
-                        "Degree Distribution Similarity (KS Statistic)": degree_distribution_similarity(G1, G2),
-                        "Clustering Coefficient Similarity": clustering_coefficient_similarity(G1, G2),
-                        "Kullback-Leibler Divergence": kullback_leibler_divergence(G1, G2),
-                        "GDDA": gdda(G1, G2)
-                    }
-
-                    results.append(metrics)
-
-    results_df = pd.DataFrame(results)
-    return results_df
-
-
-" ******************************************************************************************************************** "
-
-
 def _rescale_value(kind: str, value: float | int, n_bins: int, x_semidim: float = None, y_semidim: float = None):
     def discretize_value(value, intervals):
         # Find the interval where the value fits
@@ -352,9 +243,13 @@ def _rescale_value(kind: str, value: float | int, n_bins: int, x_semidim: float 
     return rescaled_value
 
 
-def discretize_df(dataframe: pd.DataFrame, n_bins: int, n_sensor_to_consider: int, x_semidim: float = None,
+def discretize_df(dataframe: pd.DataFrame, n_bins: int, n_sensor_to_consider: int = None, x_semidim: float = None,
                   y_semidim: float = None):
-    dataframe = _group_variables(dataframe, variable_to_group='sensor', N=n_sensor_to_consider)
+    if n_sensor_to_consider is not None:
+        dataframe = _group_variables(dataframe, variable_to_group='sensor', N=n_sensor_to_consider)
+    else:
+        dataframe = dataframe.copy()
+
     std_dev = dataframe.std()
     non_zero_std_columns = std_dev[std_dev != 0].index
 
@@ -393,6 +288,32 @@ def discretize_df(dataframe: pd.DataFrame, n_bins: int, n_sensor_to_consider: in
     # print(new_dataframe['agent_0_next_DX'].std())
     # new_dataframe = new_dataframe.loc[:, new_dataframe.std() != 0]
 
+    # Visualizations
+    """for column in new_dataframe.columns:
+        plt.figure(figsize=(10, 6))
+
+        if pd.api.types.is_numeric_dtype(new_dataframe[column]):
+            plt.subplot(1, 2, 1)
+            sns.histplot(new_dataframe[column], kde=True)
+            plt.title(f'Histogram of {column}')
+
+            plt.subplot(1, 2, 2)
+            sns.boxplot(x=new_dataframe[column])
+            plt.title(f'Boxplot of {column}')
+
+        else:
+            plt.subplot(1, 2, 1)
+            sns.countplot(x=new_dataframe[column])
+            plt.title(f'Count Plot of {column}')
+
+            plt.subplot(1, 2, 2)
+            new_dataframe[column].value_counts().plot.pie(autopct='%1.1f%%')
+            plt.title(f'Pie Chart of {column}')
+
+        plt.tight_layout()
+        plt.show()"""
+
+
     return new_dataframe
 
 
@@ -408,9 +329,14 @@ def _group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1
     for index, row in dataframe.iterrows():
         sorted_variables = row[variable_columns].sort_values(ascending=False).index
         for i in range(N):
-            if i <= len(sorted_variables):
-                variable_number = sorted_variables[i - 1].split(variable_to_group)[1]
-                dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = int(variable_number)
+            if i < len(sorted_variables):
+                # Split and handle possible non-numeric values gracefully
+                try:
+                    variable_number = sorted_variables[i].split(variable_to_group)[1]
+                    variable_number = ''.join(filter(str.isdigit, variable_number))  # Keep only numeric characters
+                    dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = int(variable_number)
+                except (IndexError, ValueError) as e:
+                    dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = None
             else:
                 dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = None
 
@@ -422,10 +348,11 @@ def _group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1
 
 def get_df_boundaries(dataframe: pd.DataFrame):
     for col in dataframe.columns.to_list():
-        iqm_mean, iqm_std = IQM_mean_std(dataframe[col])
-        print(
-            f'{col} -> max: {dataframe[col].max()}, min: {dataframe[col].min()}, mean: {dataframe[col].mean()}, std: {dataframe[col].std()}, iqm_mean: {iqm_mean}, iqm_std: {iqm_std}')
+        if isinstance(dataframe[col][0], (int, float, np.int64, np.float64)):
+            iqm_mean, iqm_std = IQM_mean_std(dataframe[col])
+            print(
+                f'{col} -> max: {dataframe[col].max()}, min: {dataframe[col].min()}, mean: {dataframe[col].mean()}, std: {dataframe[col].std()}, iqm_mean: {iqm_mean}, iqm_std: {iqm_std}')
 
-    fig = plt.figure(dpi=500, figsize=(16, 9))
-    plt.plot(dataframe['agent_0_reward'])
-    plt.show()
+    # fig = plt.figure(dpi=500, figsize=(16, 9))
+    # plt.plot(dataframe['agent_0_reward'])
+    # plt.show()
