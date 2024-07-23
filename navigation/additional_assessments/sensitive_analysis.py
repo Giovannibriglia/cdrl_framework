@@ -37,7 +37,9 @@ class SensitiveAnalysis_Bins_Sensors:
         causal_graph = _constraints_causal_graph(causal_graph)
         computation_time_cd = round(time.time()-start_time, 4)
 
-        result = {'causal_graph': causal_graph, 'computation_time_cd': computation_time_cd}
+        causal_graph_format_storage = [(x[0], x[1]) for x in causal_graph.edges]
+
+        result = {'causal_graph': causal_graph_format_storage, 'computation_time_cd': computation_time_cd}
         return result
 
     def run_single_sim(self, df: pd.DataFrame, n_bins: int, n_sensors: int, cd_algo: str,
