@@ -313,7 +313,6 @@ def discretize_df(dataframe: pd.DataFrame, n_bins: int, n_sensor_to_consider: in
         plt.tight_layout()
         plt.show()"""
 
-
     return new_dataframe
 
 
@@ -356,3 +355,9 @@ def get_df_boundaries(dataframe: pd.DataFrame):
     # fig = plt.figure(dpi=500, figsize=(16, 9))
     # plt.plot(dataframe['agent_0_reward'])
     # plt.show()
+
+
+def _constraints_causal_graph(causal_graph: nx.DiGraph):
+    edges_to_remove = [(u, v) for u, v in causal_graph.edges() if 'sensor' in u and 'sensor' in v]
+    causal_graph.remove_edges_from(edges_to_remove)
+    return causal_graph

@@ -1,5 +1,5 @@
 import pandas as pd
-from navigation.utils import evaluate_results_sensitive_analysis_causal_graphs
+from navigation.utils import
 from path_repo import GLOBAL_PATH_REPO
 
 cd_algo = 'pc'
