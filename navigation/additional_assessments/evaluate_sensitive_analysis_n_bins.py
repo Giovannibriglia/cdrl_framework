@@ -1,6 +1,6 @@
 import pandas as pd
-
-from navigation.additional_assessments.extract_metrics import MetricsBetweenTwoGraphs
+from navigation.additional_assessments.extract_metrics import MetricsBetweenTwoGraphs, MetricsOnTheGraph
+from navigation.utils import list_to_causal_graph
 from path_repo import GLOBAL_PATH_REPO
 import os
 import json
@@ -27,8 +27,8 @@ class CompareGraphsManager:
                 return file_name, content
         return None, None
 
-    def load_dataframe(self, n_bins, n_sensors, if_ground_truth: bool):
-        if if_ground_truth:
+    def load_dataframe(self, n_bins: int, n_sensors: int):
+        if n_sensors == 0:
             df_filename = f"ground_truth_df_{n_bins}bins.pkl"
             df_path = os.path.join(self.directory_path, df_filename)
             if os.path.exists(df_path):
@@ -45,7 +45,7 @@ class CompareGraphsManager:
                 print(f"Dataframe file {df_filename} not found.")
                 return None
 
-    def compare_graphs(self):
+    def compare_graphs_with_ground_truth(self):
         data = self.load_json_files()
         ground_truth_file, ground_truth_content = self.find_ground_truth(data)
 
@@ -53,21 +53,22 @@ class CompareGraphsManager:
             print("No ground truth file found.")
             return
 
-        causal_graph_ground_truth = ground_truth_content['causal_graph']
+        causal_graph_ground_truth = list_to_causal_graph(ground_truth_content['causal_graph'])
         n_bins_gt = ground_truth_content['n_bins']
-        n_sensors_gt = ground_truth_content['n_sensors']
-        df_ground_truth = self.load_dataframe(n_bins_gt, n_sensors_gt, True)
+        df_ground_truth = self.load_dataframe(n_bins_gt, 0)
 
         if df_ground_truth is None:
             print("Ground truth dataframe not found.")
             return
 
+        all_results = []
+
         for file_name, content in data.items():
             print('sono qui')
-            causal_graph_other = content['causal_graph']
+            causal_graph_other = list_to_causal_graph(content['causal_graph'])
             n_bins_other = content['n_bins']
             n_sensors_other = content['n_sensors']
-            df_other = self.load_dataframe(n_bins_other, n_sensors_other, file_name == ground_truth_file)
+            df_other = self.load_dataframe(n_bins_other, n_sensors_other)
 
             if df_other is not None:
                 print('sono qui pronto')
@@ -75,11 +76,58 @@ class CompareGraphsManager:
                                                      df_other)
                 result = comparator.compare()
 
+                result.update(content)
+
+                all_results.append(result)
+
+        return all_results
+
+    def evaluate_single_graphs_metrics(self):
+        data = self.load_json_files()
+
+        all_results = []
+
+        ground_truth_file, ground_truth_content = self.find_ground_truth(data)
+
+        if ground_truth_content:
+            causal_graph_ground_truth = list_to_causal_graph(ground_truth_content['causal_graph'])
+            n_bins_gt = ground_truth_content['n_bins']
+            df_ground_truth = self.load_dataframe(n_bins_gt, 0)
+            if df_ground_truth is not None:
+                comparator = MetricsOnTheGraph(df_ground_truth, causal_graph_ground_truth)
+
+                result = comparator.assessment()
+                result.update(ground_truth_content)
+
+                all_results.append({result})
+
+        for file_name, content in data.items():
+
+            causal_graph = list_to_causal_graph(content['causal_graph'])
+            n_bins_other = content['n_bins']
+            n_sensors_other = content.get('n_sensors', 0)
+            df = self.load_dataframe(n_bins_other, n_sensors_other)
+
+            if df is not None:
+                comparator = MetricsOnTheGraph(df, causal_graph)
+
+                result = comparator.assessment()
+                result.update(content)
+
+                all_results.append(result)
+
+        return all_results
+
 
 def main():
     path_results = './results_pc'
     assessment_sensitive_analysis = CompareGraphsManager(path_results)
-    assessment_sensitive_analysis.compare_graphs()
+
+    # results_between_graphs_and_ground_truth = assessment_sensitive_analysis.compare_graphs_with_ground_truth()
+
+    results_on_the_graphs = assessment_sensitive_analysis.evaluate_single_graphs_metrics()
+
+
 
 
 if __name__ == '__main__':

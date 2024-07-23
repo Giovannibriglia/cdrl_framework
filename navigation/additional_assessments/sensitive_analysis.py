@@ -65,7 +65,7 @@ class SensitiveAnalysis_Bins_Sensors:
             json.dump(result, json_file)
 
     def launcher_ground_truth(self, df: pd.DataFrame, cd_algo: str, show_progress_bar: bool = False):
-        n_bins = 100
+        n_bins = 150
         df_copy = df.copy()
         discretized_df = discretize_df(df_copy, n_bins, x_semidim=self.x_semidim, y_semidim=self.y_semidim)
 
@@ -82,7 +82,7 @@ class SensitiveAnalysis_Bins_Sensors:
             json.dump(result, json_file)
 
     def launcher_sensitivity_analysis(self, df: pd.DataFrame, cd_algo: str):
-        combinations = list(itertools.product(self.n_bins_considered, self.n_sensors_considered))
+        """combinations = list(itertools.product(self.n_bins_considered, self.n_sensors_considered))
 
         num_chunks = multiprocessing.cpu_count()
         # chunk_size = len(combinations) // num_chunks + 1
@@ -92,8 +92,9 @@ class SensitiveAnalysis_Bins_Sensors:
         with multiprocessing.Pool(processes=num_chunks) as pool:
             # Include ground truth run in multiprocessing
             pool.starmap(self.run_single_sim,
-                         [(df, n_bins, n_sensors, cd_algo, show_progress_cd) for (n_bins, n_sensors) in combinations])
-            pool.apply_async(self.launcher_ground_truth, (df, cd_algo, True))
+                         [(df, n_bins, n_sensors, cd_algo, show_progress_cd) for (n_bins, n_sensors) in combinations])"""
+
+        self.launcher_ground_truth(df, cd_algo, True)
 
     def start_analysis(self, cd_algo: str = None):
         if multiprocessing.get_start_method(allow_none=True) is None:

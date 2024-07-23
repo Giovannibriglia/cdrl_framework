@@ -42,16 +42,16 @@ def detach_dict(d, func=detach_and_cpu):
 " ******************************************************************************************************************** "
 
 
-def list_to_causal_graph(list_for_causal_graph: list) -> StructureModel:
-    # Create a StructureModel
-    sm = StructureModel()
+def list_to_causal_graph(list_for_causal_graph: list) -> nx.DiGraph:
+    # Create a new directed graph
+    dg = nx.DiGraph()
 
-    # Add edges to the StructureModel
-    for relationship in list_for_causal_graph:
-        cause, effect = relationship
-        sm.add_edge(cause, effect)
+    # Add edges to the directed graph
+    for cause, effect in list_for_causal_graph:
+        dg.add_edge(cause, effect)
 
-    return sm
+    return dg
+
 
 
 " ******************************************************************************************************************** "
@@ -272,8 +272,8 @@ def discretize_df(dataframe: pd.DataFrame, n_bins: int, n_sensor_to_consider: in
                 kind = 'VX'
             elif 'VY' in col:
                 kind = 'VY'
-            # elif 'sensor' in col:
-            #    kind = 'sensor'
+            elif 'sensor' in col:
+                kind = 'sensor'
             else:
                 kind = None
 
