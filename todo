@@ -1,5 +1,6 @@
 # TODO:
-    - finish casual inference for RL setup
+    - setup better discretization: based on dataframe
+    - finish casual inference for RL setup --> quartili-based filter
     - evaluate results of the sensitive analysis #bins
         - try to extract markov blanket and the equivalence class
     - launch big simulations: causal iql vs iql benchmarl vs ippo benchmarl

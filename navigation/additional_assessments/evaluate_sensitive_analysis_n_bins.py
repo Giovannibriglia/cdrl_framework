@@ -110,7 +110,7 @@ class CompareGraphsManager:
 
             if df is not None:
                 comparator = MetricsOnTheGraph(df, causal_graph)
-
+                print(n_bins_other, n_sensors_other)
                 result = comparator.assessment()
                 result.update(content)
 
@@ -126,9 +126,7 @@ def main():
     # results_between_graphs_and_ground_truth = assessment_sensitive_analysis.compare_graphs_with_ground_truth()
 
     results_on_the_graphs = assessment_sensitive_analysis.evaluate_single_graphs_metrics()
-
-
-
+    print(len(results_on_the_graphs))
 
 if __name__ == '__main__':
     main()
