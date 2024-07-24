@@ -9,6 +9,8 @@ from causality_vmas import abs_path_causality_vmas, LABEL_approximation_paramete
 from causality_vmas.causality_informativeness_quantification import CausalityInformativenessQuantification
 from causality_vmas.utils import my_approximation
 
+from path_repo import GLOBAL_PATH_REPO
+
 
 class ComputeCIQs:
     def __init__(self, df: pd.DataFrame, task_name: str):
@@ -67,7 +69,7 @@ class FindBestSimplification:
 
 
 def main():
-    df = pd.read_pickle(f'{abs_path_causality_vmas}/causality_vmas/dataframes/navigation_mdp.pkl')
+    df = pd.read_pickle(f'{GLOBAL_PATH_REPO}/causality_vmas/dataframes/navigation_mdp.pkl')
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
     df = df.loc[:200001, agent0_columns]
 
