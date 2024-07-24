@@ -5,16 +5,22 @@ import re
 import networkx as nx
 import pandas as pd
 import random
+
+from pgmpy.inference import CausalInference
+from pgmpy.models import BayesianNetwork
 import numpy as np
 from causallearn.search.ConstraintBased.PC import pc
 from causalnex.inference import InferenceEngine
-from causalnex.network import BayesianNetwork
+import causalnex
 from causalnex.structure import StructureModel
 from causalnex.structure.pytorch import from_pandas
 import json
 import multiprocessing
+from pgmpy.estimators import MaximumLikelihoodEstimator
 from tqdm.auto import tqdm
 import matplotlib.pyplot as plt
+import pgmpy
+import time
 
 FONT_SIZE_NODE_GRAPH = 7
 ARROWS_SIZE_NODE_GRAPH = 30
@@ -26,6 +32,7 @@ COL_REWARD_ACTION_VALUES = 'reward_action_values'
 class CausalDiscovery:
     def __init__(self, df: pd.DataFrame = None, dir_name: str = None, env_name: str = None):
 
+        self.cd_algo = None
         self.features_names = None
         self.causal_graph = None
         self.notears_graph = None
@@ -57,103 +64,116 @@ class CausalDiscovery:
         for col in self.df.columns:
             self.df[str(col)] = self.df[str(col)].astype(str).str.replace(',', '').astype(float)
 
-    def training(self, cd_algo: str = 'mario', show_progress: bool = False):
-        if cd_algo == 'pc':
-            causal_relationships = self.use_pc(show_progress)
-            sm = StructureModel()
-            sm.add_edges_from([(node1, node2) for node1, node2 in causal_relationships])
-            self.causal_graph = sm
+    def training(self, cd_algo: str = 'PC', show_progress: bool = False):
+        self.cd_algo = cd_algo
+        if cd_algo == 'PC':
+            self.causal_graph = self.use_PC(show_progress)
 
-            self._plot_and_save_graph(self.causal_graph, True)
+        elif cd_algo == 'NOTEARS':
+            self.causal_graph = self.use_NOTEARS()
 
-            if_causal_graph_DAG = nx.is_directed_acyclic_graph(self.causal_graph)
-            if not if_causal_graph_DAG:
-                print('**** Causal graph is not a DAG ****')
-        elif cd_algo == 'notears':
-            self.causal_graph = from_pandas(self.df, max_iter=5000, use_gpu=True)
-            self.causal_graph.remove_edges_below_threshold(0.2)
-            largest_component = max(nx.weakly_connected_components(self.causal_graph), key=len)
-            self.causal_graph = self.causal_graph.subgraph(largest_component).copy()
-            # self.notears_graph = self.generate_random_dag(self.features_names)
-            self._plot_and_save_graph(self.causal_graph, True)
+        elif cd_algo == 'MY':
+            notears_graph = self.use_NOTEARS()
+            largest_component = max(nx.weakly_connected_components(notears_graph), key=len)
+            notears_graph = notears_graph.subgraph(largest_component).copy()
+            self.causal_graph = self.use_MY(notears_graph, show_progress)
 
-            if_causal_graph_DAG = nx.is_directed_acyclic_graph(self.causal_graph)
-            if not if_causal_graph_DAG:
-                print('**** Causal graph is not a DAG ****')
+    def return_causal_graph(self) -> nx.DiGraph:
+        structure_to_return_list = [(x[0], x[1]) for x in self.causal_graph.edges]
+        structure_to_return = nx.DiGraph(structure_to_return_list)
+        return structure_to_return
 
-        else:
-            print(f'\n{self.env_name} - structuring model through NOTEARS... {len(self.df)} timesteps')
-            self.notears_graph = from_pandas(self.df, max_iter=5000, use_gpu=True)
-            self.notears_graph.remove_edges_below_threshold(0.2)
-            largest_component = max(nx.weakly_connected_components(self.notears_graph), key=len)
-            self.notears_graph = self.notears_graph.subgraph(largest_component).copy()
-            # self.notears_graph = self.generate_random_dag(self.features_names)
-            self._plot_and_save_graph(self.notears_graph, False)
+    def return_df(self):
+        return self.df
 
-            if nx.number_weakly_connected_components(self.notears_graph) == 1 and nx.is_directed_acyclic_graph(
-                    self.notears_graph):
+    def plot_and_save_graph(self, if_save: bool = False, if_show: bool = False):
 
-                # print('do-calculus-1...')
-                # assessment of the no-tears graph
-                causal_relationships, _, _ = self._causality_assessment(self.notears_graph, self.df, show_progress)
+        import warnings
+        warnings.filterwarnings("ignore")
 
-                sm = StructureModel()
-                sm.add_edges_from([(node1, node2) for node1, node2 in causal_relationships])
-                self.causal_graph = sm
+        fig = plt.figure(dpi=1000)
+        plt.title(f'{self.cd_algo} graph - {len(self.causal_graph)} nodes - {len(self.causal_graph.edges)} edges',
+                  fontsize=16)
 
-                self._plot_and_save_graph(self.causal_graph, True)
+        nx.draw(self.causal_graph, with_labels=True, font_size=FONT_SIZE_NODE_GRAPH,
+                arrowsize=ARROWS_SIZE_NODE_GRAPH, arrows=True,
+                edge_color='orange', node_size=NODE_SIZE_GRAPH, font_weight='bold', node_color='skyblue',
+                pos=nx.circular_layout(self.causal_graph))
 
-                if_causal_graph_DAG = nx.is_directed_acyclic_graph(self.causal_graph)
-                if not if_causal_graph_DAG:
-                    print('**** Causal graph is not a DAG ****')
+        structure_to_save = [(x[0], x[1]) for x in self.causal_graph.edges]
 
-            else:
-                self.causal_graph = None
-                print(
-                    f'Number of graphs: {nx.number_weakly_connected_components(self.notears_graph)},'f' DAG: {nx.is_directed_acyclic_graph(self.notears_graph)}')
+        if if_save:
+            if self.dir_save is not None:
+                plt.savefig(f'{self.dir_save}/{self.cd_algo}_graph.png')
 
-    def generate_random_dag(self, nodes):
-        # Initialize the StructureModel
-        sm = StructureModel()
+                with open(f'{self.dir_save}/{self.cd_algo}_graph_structure.json', 'w') as json_file:
+                    json.dump(structure_to_save, json_file)
 
-        # Identify "action" and "reward" nodes
-        action_nodes = [node for node in nodes if "action" in node]
-        reward_nodes = [node for node in nodes if "reward" in node]
-        other_nodes = [node for node in nodes if node not in action_nodes + reward_nodes]
+        if if_show:
+            plt.show()
+        plt.close(fig)
 
-        # Shuffle the non-action and non-reward nodes to create a random topological order
-        random.shuffle(other_nodes)
+    def use_PC(self, show_progress) -> nx.DiGraph:
 
-        # Create a sorted list of nodes: action_nodes + other_nodes + reward_nodes
-        sorted_nodes = action_nodes + other_nodes + reward_nodes
+        # Clean the data
+        data = self.df.apply(lambda x: x.fillna(x.mean()), axis=0)
+        data = data.apply(lambda x: x.fillna(x.mean()), axis=0)
+        # Calculate the maximum finite value for each column
+        finite_max = data.apply(lambda x: np.max(x[np.isfinite(x)]), axis=0)
+        # Replace infinite values in each column with the corresponding maximum finite value
+        data = data.apply(lambda x: x.replace([np.inf, -np.inf], finite_max[x.name]), axis=0)
+        # Ensure no zero standard deviation
+        stddev = data.std()
+        if (stddev == 0).any():
+            stddev[stddev == 0] = np.inf  # Adjust as needed
+        # Convert the cleaned data to a numpy array
+        data_array = data.values
 
-        # Ensure the graph is fully connected by adding a backbone
-        for i in range(len(sorted_nodes) - 1):
-            sm.add_edge(sorted_nodes[i], sorted_nodes[i + 1])
+        labels = [f'{col}' for i, col in enumerate(self.features_names)]
+        cg = pc(data_array, show_progress=show_progress)
 
-        # Connect action nodes to all other nodes
-        for action_node in action_nodes:
-            for node in sorted_nodes:
-                if action_node != node:
-                    sm.add_edge(action_node, node)
+        # Create a NetworkX graph
+        G = nx.DiGraph()
+        dict_nodes_number = {}
+        # Add nodes with proper labels
+        for node in cg.G.get_nodes():
+            node_name = node.get_name()
+            node_index = int(node_name[1:]) - 1
+            node_label = labels[node_index]
+            G.add_node(node_name, label=node_label)
+            dict_nodes_number[node_name] = node_label
 
-        # Connect all other nodes to reward nodes
-        for node in sorted_nodes:
-            if node not in reward_nodes:
-                for reward_node in reward_nodes:
-                    sm.add_edge(node, reward_node)
+        # Add edges from the original graph to the new graph
+        for edge in cg.G.get_graph_edges():
+            source_name = edge.get_node1().get_name()
+            source_label = dict_nodes_number[source_name]
 
-        # Add additional random edges to the DAG
-        for i in range(len(sorted_nodes)):
-            for j in range(i + 2, len(sorted_nodes)):  # Skip immediate next node to avoid redundant backbone edges
-                if random.random() < 0.5:  # Randomly decide to add an edge
-                    sm.add_edge(sorted_nodes[i], sorted_nodes[j])
+            target_name = edge.get_node2().get_name()
+            target_label = dict_nodes_number[target_name]
 
-        return sm
+            G.add_edge(source_label, target_label)
 
-    def _causality_assessment(self, graph: StructureModel, df: pd.DataFrame, show_progress: bool = False) -> Tuple[List[Tuple], List, List]:
+        return G
+
+    def use_NOTEARS(self) -> nx.DiGraph:
+        structure_model = from_pandas(self.df, max_iter=5000, use_gpu=True)
+        structure_model.remove_edges_below_threshold(0.2)
+
+        # Convert CausalNex DAG to NetworkX DiGraph
+        G = nx.DiGraph()
+        # Add nodes
+        G.add_nodes_from(structure_model.nodes)
+        # Add edges
+        G.add_edges_from(structure_model.edges)
+
+        return G
+
+    def use_MY(self, graph: nx.DiGraph, show_progress: bool = False) -> nx.DiGraph:
+
+        df = self.df.copy()
+
         print('Bayesian network definition...')
-        bn = BayesianNetwork(graph)
+        bn = causalnex.network.BayesianNetwork(graph)
         print('Bayesian network fitting...')
         bn = bn.fit_node_states_and_cpds(df)
 
@@ -229,95 +249,14 @@ class CausalDiscovery:
                 dependent_vars.add(node)  # Mark as dependent
                 independent_vars.discard(node)  # Remove from independents
 
-        return causal_relationships, list(independent_vars), list(dependent_vars)
-
-    def return_causal_graph(self) -> nx.DiGraph:
-        if self.causal_graph is not None:
-            structure_to_return_list = [(x[0], x[1]) for x in self.causal_graph.edges]
-            structure_to_return = nx.DiGraph(structure_to_return_list)
-            return structure_to_return
-        else:
-            structure_to_return_list = [(x[0], x[1]) for x in self.notears_graph.edges]
-            structure_to_return = nx.DiGraph(structure_to_return_list)
-            return structure_to_return
-
-    def return_df(self):
-        return self.df
-
-    def _plot_and_save_graph(self, sm: StructureModel, if_causal: bool):
-
-        import warnings
-        warnings.filterwarnings("ignore")
-
-        fig = plt.figure(dpi=1000)
-        if if_causal:
-            plt.title(f'Causal graph - {len(sm)} nodes - {len(sm.edges)} edges', fontsize=16)
-        else:
-            plt.title(f'NOTEARS graph - {len(sm)} nodes - {len(sm.edges)} edges', fontsize=16)
-
-        nx.draw(sm, with_labels=True, font_size=FONT_SIZE_NODE_GRAPH,
-                arrowsize=ARROWS_SIZE_NODE_GRAPH if if_causal else 0,
-                arrows=if_causal,
-                edge_color='orange', node_size=NODE_SIZE_GRAPH, font_weight='bold', node_color='skyblue',
-                pos=nx.circular_layout(sm))
-
-        structure_to_save = [(x[0], x[1]) for x in sm.edges]
-
-        if self.dir_save is not None:
-            if if_causal:
-                plt.savefig(f'{self.dir_save}/causal_graph{len(self.df)}.png')
-
-                with open(f'{self.dir_save}/causal_structure{len(self.df)}.json', 'w') as json_file:
-                    json.dump(structure_to_save, json_file)
-            else:
-                plt.savefig(f'{self.dir_save}/notears_graph.png')
-
-                with open(f'{self.dir_save}/notears_structure.json', 'w') as json_file:
-                    json.dump(structure_to_save, json_file)
-
-        # plt.show()
-        plt.close(fig)
-
-    def use_pc(self, show_progress: bool = False):
-
-        # Clean the data
-        data = self.df.apply(lambda x: x.fillna(x.mean()), axis=0)
-        data = data.apply(lambda x: x.fillna(x.mean()), axis=0)
-        # Calculate the maximum finite value for each column
-        finite_max = data.apply(lambda x: np.max(x[np.isfinite(x)]), axis=0)
-        # Replace infinite values in each column with the corresponding maximum finite value
-        data = data.apply(lambda x: x.replace([np.inf, -np.inf], finite_max[x.name]), axis=0)
-        # Ensure no zero standard deviation
-        stddev = data.std()
-        if (stddev == 0).any():
-            stddev[stddev == 0] = np.inf  # Adjust as needed
-        # Convert the cleaned data to a numpy array
-        data_array = data.values
-
-        labels = [f'{col}' for i, col in enumerate(self.features_names)]
-        cg = pc(data_array, show_progress=show_progress)
-
-        # Create a NetworkX graph
         G = nx.DiGraph()
-        causal_relationships = []
+        # Add edges from the list
+        G.add_edges_from(causal_relationships)
 
-        # Add nodes with proper labels
-        for node in cg.G.get_nodes():
-            node_name = node.get_name()
-            node_index = int(node_name[1:]) - 1  # Assuming node names are in the form 'X1', 'X2', ...
-            G.add_node(node_name, label=labels[node_index])
-
-        # Add edges and collect causal relationships
-        for edge in cg.G.get_graph_edges():
-            src = edge.get_node1().get_name()
-            dst = edge.get_node2().get_name()
-            G.add_edge(src, dst)
-            causal_relationships.append((labels[int(src[1:]) - 1], labels[int(dst[1:]) - 1]))
-
-        return causal_relationships
+        return G
 
 
-class CausalInferenceForRL:
+"""class CausalInferenceForRL:
     def __init__(self, df: pd.DataFrame = None, causal_graph: StructureModel = None, causal_table: pd.DataFrame = None,
                  dir_name: str = None, env_name: str = None):
 
@@ -367,7 +306,7 @@ class CausalInferenceForRL:
 
         try:
             # print('bayesian network definition...')
-            self.bn = BayesianNetwork(self.causal_graph)
+            self.bn = causalnex.network.BayesianNetwork(self.causal_graph)
             # print('bayesian network fitting...')
             self.bn = self.bn.fit_node_states_and_cpds(self.df)
 
@@ -454,7 +393,7 @@ class CausalInferenceForRL:
 
 
 def process_chunk(chunk: Tuple, df: pd.DataFrame, causal_graph: StructureModel):
-    ie = InferenceEngine(BayesianNetwork(causal_graph).fit_node_states_and_cpds(df))
+    ie = InferenceEngine(causalnex.network.BayesianNetwork(causal_graph).fit_node_states_and_cpds(df))
     rows = []
     pbar = tqdm(chunk, desc=f'Preparing causal table', leave=True)
     col_reward = [s for s in df.columns.to_list() if 'reward' in s][0]
@@ -542,12 +481,64 @@ def inference_function(observation: Dict, ie: InferenceEngine, reward_col: str,
         except Exception as e:
             print(f"Error during reset intervention on {feature} with value {value}: {str(e)}")
 
-    return action_reward_values
+    return action_reward_values"""
 
 
-def plot_reward(values, name):
-    fig = plt.figure(dpi=500)
-    plt.title(f'{name} - {len(values)}')
-    x = np.arange(0, len(values), 1)
-    plt.plot(x, values)
-    plt.show()
+class SingleCausalInference:
+    def __init__(self, df: pd.DataFrame, causal_graph: nx.DiGraph):
+        self.df = df
+        self.causal_graph = causal_graph
+        self.features = self.causal_graph.nodes
+
+        # Convert the networkx graph to a pgmpy Bayesian Network
+        bn = pgmpy.models.BayesianNetwork()
+        bn.add_edges_from(ebunch=self.causal_graph.edges())
+        # Estimate CPDs using MaximumLikelihoodEstimator
+        bn.fit(df, estimator=MaximumLikelihoodEstimator)
+        # Check if the model is valid
+        assert bn.check_model()
+        # Create a CausalInference object
+        self.ci = CausalInference(bn)
+
+    def infer(self, input_dict_do: Dict, target_variable: str, adjustment_set=None) -> Dict:
+        # print(f'infer: {input_dict_do} - {target_variable}')
+
+        # Ensure the target variable is not in the evidence
+        input_dict_do_clean = {k: v for k, v in input_dict_do.items() if k != target_variable}
+
+        # print(f'Cleaned input (evidence): {input_dict_do_clean}')
+        # print(f'Target variable: {target_variable}')
+
+        if adjustment_set is None:
+            # Compute an adjustment set if not provided
+            do_vars = [var for var, state in input_dict_do_clean.items()]
+            adjustment_set = set(
+                itertools.chain(*[self.causal_graph.predecessors(var) for var in do_vars])
+            )
+            # print(f'Computed adjustment set: {adjustment_set}')
+        else:
+            # print(f'Provided adjustment set: {adjustment_set}')
+            pass
+
+        # Ensure target variable is not part of the adjustment set
+        adjustment_set.discard(target_variable)
+
+        try:
+            query_result = self.ci.query(
+                variables=[target_variable],
+                do=input_dict_do_clean,
+                evidence=input_dict_do_clean,
+                adjustment_set=adjustment_set,
+                show_progress=False
+            )
+            # print(f'Query result: {query_result}')
+
+            # Convert DiscreteFactor to a dictionary
+            result_dict = {str(state): float(query_result.values[idx]) for idx, state in
+                           enumerate(query_result.state_names[target_variable])}
+            # print(f'Result dictionary: {result_dict}')
+        except ValueError as e:
+            print(f'Error during query: {e}')
+            raise e
+
+        return result_dict

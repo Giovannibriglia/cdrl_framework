@@ -21,13 +21,11 @@ class MetricsBetweenTwoGraphs:
         self.df_target = df_target
         self.df_pred = df_pred
 
-        self.result = {}
-
     def compare(self):
         self._compute_metrics_between_graphs()
-        self._generate_result()
+        result = self._generate_result()
 
-        return self.result
+        return result
 
     def _compute_metrics_between_graphs(self):
         adj_matrix_target = get_adjacency_matrix(self.G_target)
@@ -43,13 +41,13 @@ class MetricsBetweenTwoGraphs:
         obs_dist_target, int_dist_target = get_obs_and_int_distribution(self.G_target, self.df_target)
         obs_dist_pred, int_dist_pred = get_obs_and_int_distribution(self.G_pred, self.df_pred)
 
-        self.kl_obs = get_KL_Divergence(obs_dist_target, obs_dist_pred)
-        self.tvd_obs = get_TotalVariationDistance(obs_dist_target, obs_dist_pred)
-        self.cmi_obs = get_CapacitatedMutualInformation(obs_dist_target, obs_dist_pred)
+        self.kl_obs = None  # get_KL_Divergence(obs_dist_target, obs_dist_pred)
+        self.tvd_obs = None  # get_TotalVariationDistance(obs_dist_target, obs_dist_pred)
+        self.cmi_obs = None  # get_CapacitatedMutualInformation(obs_dist_target, obs_dist_pred)
 
-        self.kl_int = get_KL_Divergence(int_dist_target, int_dist_pred)
-        self.tvd_int = get_TotalVariationDistance(int_dist_target, int_dist_pred)
-        self.cmi_int = get_CapacitatedMutualInformation(int_dist_target, int_dist_pred)
+        self.kl_int = None  # get_KL_Divergence(int_dist_target, int_dist_pred)
+        self.tvd_int = None  # get_TotalVariationDistance(int_dist_target, int_dist_pred)
+        self.cmi_int = None  # get_CapacitatedMutualInformation(int_dist_target, int_dist_pred)
 
     def _generate_result(self) -> Dict:
         result = {
@@ -74,14 +72,13 @@ class MetricsOnTheGraph:
     def __init__(self, df: pd.DataFrame, causal_graph: nx.DiGraph):
         self.df = df
         self.G = causal_graph
-        self.result = None
         self.computation_time_metrics = 0
 
     def assessment(self):
         self._compute_graph_metrics()
-        self._generate_result()
+        result = self._generate_result()
 
-        return self.result
+        return result
 
     def _compute_graph_metrics(self):
         start_time = time.time()
@@ -89,7 +86,7 @@ class MetricsOnTheGraph:
         self.n_edges = self.G.number_of_edges()
         self.observational_distribution, self.interventional_distribution = get_obs_and_int_distribution(
             self.G, self.df)
-        self.causal_strengths = get_causal_strengths_all_edges(self.G, self.df)
+        # self.causal_strengths = get_causal_strengths_all_edges(self.G, self.df)
         self.adjacency_matrix = get_adjacency_matrix(self.G)
         self.mec = get_markov_equivalence_class(self.G)
         self.markov_blanket_all_nodes = {str(node): list(get_markov_blanket_node(self.G, node)) for node in
@@ -97,18 +94,20 @@ class MetricsOnTheGraph:
         self.computation_time_metrics = time.time() - start_time
 
     def _generate_result(self):
-        self.result = {
+        result = {
             'computation_time_metrics': self.computation_time_metrics,
             'n_edges': self.n_edges,
             'n_nodes': self.n_nodes,
             'observational_distribution': {k: v.tolist() for k, v in self.observational_distribution.items()},
             'interventional_distribution': convert_arrays_to_lists(self.interventional_distribution),
-            'causal_strengths_all_nodes': self.causal_strengths,
+            # 'causal_strengths_all_nodes': self.causal_strengths,
             'adjacency_matrix': list(self.adjacency_matrix),
             'markov_equivalence_class': mec_to_serializable(self.mec),
             'markov_blanket_all_nodes': self.markov_blanket_all_nodes
         }
-        print(f' Time to compute graph-metrics: {round(self.computation_time_metrics, 2)} secs')
+
+        return result
+        # print(f' Time to compute graph-metrics: {round(self.computation_time_metrics, 2)} secs')
 
 
 def convert_arrays_to_lists(d):
@@ -253,11 +252,15 @@ def _is_positive_definite(matrix: np.ndarray) -> bool:
 
 
 def get_obs_and_int_distribution(G: nx.DiGraph, df: pd.DataFrame):
-    model = BayesianNetwork(G.edges())
-    model.fit(df, estimator=MaximumLikelihoodEstimator)
-    observational_distributions = _compute_observational_distributions(model)
-    interventional_distributions = _compute_all_interventional_distributions(model, df)
-    return observational_distributions, interventional_distributions
+    try:
+        model = BayesianNetwork()
+        model.add_edges_from(G.edges)
+        model.fit(df, estimator=MaximumLikelihoodEstimator)
+        observational_distributions = _compute_observational_distributions(model)
+        interventional_distributions = _compute_all_interventional_distributions(model, df)
+        return observational_distributions, interventional_distributions
+    except:
+        return {}, {}
 
 
 def _compute_observational_distributions(model):
@@ -341,30 +344,19 @@ def get_StructuralHammingDistance(target, pred, double_for_anticausal=True) -> f
 
             The value tends to zero as the graphs tend to be identical."""
 
-    edges1 = set(target.edges())
-    edges2 = set(pred.edges())
-
-    # Edge additions and deletions
-    additions = edges2 - edges1
-    deletions = edges1 - edges2
-
-    # Edge reversals
-    reversals = set((v, u) for (u, v) in edges1).intersection(edges2)
-
-    shd_value = len(additions) + len(deletions) + len(reversals)
-    print('shd1: ', shd_value)
-
     true_labels = get_adjacency_matrix(target)
-    predictions = get_adjacency_matrix(pred, target.nodes()
-    if isinstance(target, nx.DiGraph) else None)
+    predictions = get_adjacency_matrix(pred)  # , target.nodes() if isinstance(target, nx.DiGraph) else None)
 
-    diff = np.abs(true_labels - predictions)
+    # Padding predictions to match the shape of true_labels
+    pad_size = (true_labels.shape[0] - predictions.shape[0], true_labels.shape[1] - predictions.shape[1])
+    padded_predictions = np.pad(predictions, ((0, pad_size[0]), (0, pad_size[1])), mode='constant', constant_values=0)
+
+    diff = np.abs(true_labels - padded_predictions)
     if double_for_anticausal:
         return np.sum(diff)
     else:
         diff = diff + diff.transpose()
         diff[diff > 1] = 1  # Ignoring the double edges.
-        print('shd2: ', np.sum(diff) / 2)
         return np.sum(diff) / 2
 
 
@@ -374,16 +366,25 @@ def get_StructuralInterventionDistance(target, pred) -> int:
         nodes = list(graph.nodes)
         for i in range(len(nodes)):
             for j in range(i + 1, len(nodes)):
-                distances[(nodes[i], nodes[j])] = nx.shortest_path_length(graph, nodes[i], nodes[j])
-                distances[(nodes[j], nodes[i])] = nx.shortest_path_length(graph, nodes[j], nodes[i])
+                try:
+                    dist = nx.shortest_path_length(graph, nodes[i], nodes[j])
+                    distances[(nodes[i], nodes[j])] = dist
+                    distances[(nodes[j], nodes[i])] = dist
+                except nx.NetworkXNoPath:
+                    distances[(nodes[i], nodes[j])] = float('inf')
+                    distances[(nodes[j], nodes[i])] = float('inf')
         return distances
 
     true_distances = find_intervention_distances(target)
     estimated_distances = find_intervention_distances(pred)
 
+    all_keys = set(true_distances.keys()).union(set(estimated_distances.keys()))
+
     sid = 0
-    for key in true_distances.keys():
-        if true_distances[key] != estimated_distances[key]:
+    for key in all_keys:
+        true_dist = true_distances.get(key, float('inf'))
+        estimated_dist = estimated_distances.get(key, float('inf'))
+        if true_dist != estimated_dist:
             sid += 1
 
     return sid
@@ -417,7 +418,7 @@ def get_JaccardSimilarity(target, pred) -> float:
     return similarity / num_pairs if num_pairs > 0 else 0
 
 
-def get_FrobeniusNorm(target, pred) -> float:
+def get_FrobeniusNorm(target: np.ndarray, pred: np.ndarray) -> float:
     """
     Compute the Frobenius norm between two matrices.
 
@@ -426,8 +427,30 @@ def get_FrobeniusNorm(target, pred) -> float:
     pred (np.ndarray): Second matrix.
 
     Returns:
-    float: Frobenius norm between matrix1 and matrix2.
+    float: Frobenius norm between target and pred.
     """
+
+    def _resize_matrix(matrix: np.ndarray, new_shape: tuple) -> np.ndarray:
+        """
+        Resize a matrix to the new shape by padding with zeros if necessary.
+
+        Parameters:
+        matrix (np.ndarray): The matrix to resize.
+        new_shape (tuple): The desired shape.
+
+        Returns:
+        np.ndarray: The resized matrix.
+        """
+        resized_matrix = np.zeros(new_shape)
+        original_shape = matrix.shape
+        resized_matrix[:original_shape[0], :original_shape[1]] = matrix
+        return resized_matrix
+
+    if target.shape != pred.shape:
+        new_shape = (max(target.shape[0], pred.shape[0]), max(target.shape[1], pred.shape[1]))
+        target = _resize_matrix(target, new_shape)
+        pred = _resize_matrix(pred, new_shape)
+
     return np.linalg.norm(target - pred, 'fro')
 
 

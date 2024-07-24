@@ -1,13 +1,14 @@
+import networkx as nx
 import pandas as pd
-from navigation.additional_assessments.extract_metrics import MetricsBetweenTwoGraphs, MetricsOnTheGraph
-from navigation.utils import list_to_causal_graph
+from matplotlib import pyplot as plt
+from tqdm.auto import tqdm
+
+from causality_vmas.additional_assessments.extract_metrics import MetricsBetweenTwoGraphs, MetricsOnTheGraph
+from causality_vmas.utils import list_to_causal_graph
 from path_repo import GLOBAL_PATH_REPO
 import os
 import json
 
-
-# dict info:
-# 'causal_graph', 'computation_time_cd', 'n_bins', 'n_sensors', 'cd_algo', 'x_semidim', 'y_semidim', 'len_df'
 
 class CompareGraphsManager:
     def __init__(self, directory_path):
@@ -55,6 +56,9 @@ class CompareGraphsManager:
 
         causal_graph_ground_truth = list_to_causal_graph(ground_truth_content['causal_graph'])
         n_bins_gt = ground_truth_content['n_bins']
+        if not nx.is_directed_acyclic_graph(causal_graph_ground_truth):
+            self._plot_causal_graph(causal_graph_ground_truth, n_bins_gt, 0)
+
         df_ground_truth = self.load_dataframe(n_bins_gt, 0)
 
         if df_ground_truth is None:
@@ -62,22 +66,21 @@ class CompareGraphsManager:
             return
 
         all_results = []
+        pbar = tqdm(data.items())
+        for file_name, content in pbar:
+            causal_graph_pred = list_to_causal_graph(content['causal_graph'])
+            n_bins_pred = content['n_bins']
+            n_sensors_pred = content['n_sensors']
 
-        for file_name, content in data.items():
-            print('sono qui')
-            causal_graph_other = list_to_causal_graph(content['causal_graph'])
-            n_bins_other = content['n_bins']
-            n_sensors_other = content['n_sensors']
-            df_other = self.load_dataframe(n_bins_other, n_sensors_other)
+            if not nx.is_directed_acyclic_graph(causal_graph_pred):
+                self._plot_causal_graph(causal_graph_pred, n_bins_pred, n_sensors_pred)
+            df_pred = self.load_dataframe(n_bins_pred, n_sensors_pred)
 
-            if df_other is not None:
-                print('sono qui pronto')
-                comparator = MetricsBetweenTwoGraphs(causal_graph_ground_truth, causal_graph_other, df_ground_truth,
-                                                     df_other)
+            if df_pred is not None:
+                comparator = MetricsBetweenTwoGraphs(causal_graph_ground_truth, causal_graph_pred, df_ground_truth,
+                                                     df_pred)
                 result = comparator.compare()
-
                 result.update(content)
-
                 all_results.append(result)
 
         return all_results
@@ -98,10 +101,10 @@ class CompareGraphsManager:
 
                 result = comparator.assessment()
                 result.update(ground_truth_content)
+                all_results.append(result)
 
-                all_results.append({result})
-
-        for file_name, content in data.items():
+        pbar = tqdm(data.items())
+        for file_name, content in pbar:
 
             causal_graph = list_to_causal_graph(content['causal_graph'])
             n_bins_other = content['n_bins']
@@ -110,7 +113,6 @@ class CompareGraphsManager:
 
             if df is not None:
                 comparator = MetricsOnTheGraph(df, causal_graph)
-                print(n_bins_other, n_sensors_other)
                 result = comparator.assessment()
                 result.update(content)
 
@@ -118,15 +120,42 @@ class CompareGraphsManager:
 
         return all_results
 
+    @staticmethod
+    def _plot_causal_graph(causal_graph: nx.DiGraph, n_bins: int, n_sensors: int = 0):
+        import warnings
+        warnings.filterwarnings("ignore")
+
+        FONT_SIZE_NODE_GRAPH = 7
+        ARROWS_SIZE_NODE_GRAPH = 30
+        NODE_SIZE_GRAPH = 1000
+
+        fig = plt.figure(dpi=1000)
+        if n_sensors == 0:
+            plt.title('Ground Truth', fontsize=16)
+        else:
+            plt.title(f'{n_bins} bins - {n_sensors} sensors', fontsize=16)
+
+        nx.draw(causal_graph, with_labels=True, font_size=FONT_SIZE_NODE_GRAPH,
+                arrowsize=ARROWS_SIZE_NODE_GRAPH,
+                arrows=True,
+                edge_color='orange', node_size=NODE_SIZE_GRAPH, font_weight='bold', node_color='skyblue',
+                pos=nx.circular_layout(causal_graph))
+
+        plt.show()
+
 
 def main():
     path_results = './results_pc'
     assessment_sensitive_analysis = CompareGraphsManager(path_results)
 
-    # results_between_graphs_and_ground_truth = assessment_sensitive_analysis.compare_graphs_with_ground_truth()
+    """results_between_graphs_and_ground_truth = assessment_sensitive_analysis.compare_graphs_with_ground_truth()
+    df_res_between_graphs_and_ground_truth = pd.DataFrame(results_between_graphs_and_ground_truth)
+    df_res_between_graphs_and_ground_truth.to_excel('res_between_graphs_and_ground_truth.xlsx')"""
 
     results_on_the_graphs = assessment_sensitive_analysis.evaluate_single_graphs_metrics()
-    print(len(results_on_the_graphs))
+    df_res_on_the_graphs = pd.DataFrame(results_on_the_graphs)
+    df_res_on_the_graphs.to_excel('res_on_the_graphs.xlsx')
+
 
 if __name__ == '__main__':
     main()

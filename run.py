@@ -1,4 +1,4 @@
-from navigation.trainer import run_simulations
+from causality_vmas.trainer import run_simulations
 from path_repo import GLOBAL_PATH_REPO
 import pyglet
 

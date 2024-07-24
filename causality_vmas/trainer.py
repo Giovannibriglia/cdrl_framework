@@ -7,7 +7,7 @@ from vmas import make_env
 from path_repo import GLOBAL_PATH_REPO
 from torch import Tensor
 import time
-from navigation.rl_algos import RandomAgentVMAS, QLearningAgent, DQNAgent
+from causality_vmas.rl_algos import RandomAgentVMAS, QLearningAgent, DQNAgent
 import torch
 from vmas.simulator.environment import Wrapper
 from tqdm.auto import tqdm
@@ -44,7 +44,7 @@ class VMASTrainer:
         self.dict_metrics = {
             f'agent_{i}': {
                 'env': {
-                    'task': 'navigation',
+                    'task': 'causality_vmas',
                     'n_agents': self.n_agents,
                     'n_training_episodes': self.n_training_episodes,
                     'env_max_steps': self.max_steps_env,
@@ -71,7 +71,7 @@ class VMASTrainer:
     def _config_env(self, simulation_config: Dict = None):
         self.n_training_episodes = int(simulation_config.get('n_episodes', 1))
         self.n_agents = int(simulation_config.get('n_agents', 3))
-        self.scenario = str(simulation_config.get('task', 'navigation'))
+        self.scenario = str(simulation_config.get('task', 'causality_vmas'))
         self.max_steps_env = int(simulation_config.get('max_steps_env', 5000))
         self.x_semidim = float(simulation_config.get('x_semidim', 1))
         self.y_semidim = float(simulation_config.get('y_semidim', 1))
@@ -259,7 +259,7 @@ class VMASTrainer:
         self.dict_metrics[agent_key]['n_collisions'][episode_idx][step_idx][env_idx].append(collision)
 
     def _save_metrics(self):
-        dir_results = f'{GLOBAL_PATH_REPO}/navigation/results'
+        dir_results = f'{GLOBAL_PATH_REPO}/causality_vmas/results'
         os.makedirs(dir_results, exist_ok=True)
 
         with open(f'{dir_results}/{self.algos[0].name}_{self.observability}.json', 'w') as file:
@@ -267,14 +267,14 @@ class VMASTrainer:
 
         if self.algos[0].name == 'random':
             if self.algos[0].save_df:
-                dir_save = f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge/offline'
+                dir_save = f'{GLOBAL_PATH_REPO}/causality_vmas/causal_knowledge/offline'
                 os.makedirs(dir_save, exist_ok=True)
                 df_final = pd.DataFrame()
                 for algo in self.algos:
                     df_new = algo.return_df()
                     df_final = pd.concat([df_final, df_new], axis=1).reset_index(drop=True)
                 df_final.to_pickle(f'{dir_save}/df_random_{self.observability}_{len(df_final)}.pkl')
-                # df_final.to_excel(f'{GLOBAL_PATH_REPO}/navigation/df_random_{self.observability}_{len(df_final)}.xlsx')
+                # df_final.to_excel(f'{GLOBAL_PATH_REPO}/causality_vmas/df_random_{self.observability}_{len(df_final)}.xlsx')
 
 
 def run_simulations(path_yaml_config_env: str, path_yaml_config_algo: str, if_rendering: bool = False):
@@ -288,7 +288,7 @@ def run_simulations(path_yaml_config_env: str, path_yaml_config_algo: str, if_re
     algo_config = config_algo.get('algo_config')
     causality_config = config_algo.get('causality_config', None)
 
-    task = simulation_config.get('task', 'navigation')
+    task = simulation_config.get('task', 'causality_vmas')
     observability = simulation_config.get('observability', 'mdp')
     algorithm_name = algo_config.get('name', 'random')
 

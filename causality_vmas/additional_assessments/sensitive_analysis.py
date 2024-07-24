@@ -6,8 +6,8 @@ import yaml
 import time
 import pandas as pd
 import multiprocessing
-from navigation.causality_algos import CausalDiscovery
-from navigation.utils import discretize_df, _constraints_causal_graph
+from causality_vmas.causality_algos import CausalDiscovery
+from causality_vmas.utils import discretize_df, _constraints_causal_graph
 from path_repo import GLOBAL_PATH_REPO
 
 
@@ -94,7 +94,7 @@ class SensitiveAnalysis_Bins_Sensors:
             pool.starmap(self.run_single_sim,
                          [(df, n_bins, n_sensors, cd_algo, show_progress_cd) for (n_bins, n_sensors) in combinations])
 
-        # self.launcher_ground_truth(df, cd_algo, True)
+        self.launcher_ground_truth(df, cd_algo, True)
 
     def start_analysis(self, cd_algo: str = None):
         if multiprocessing.get_start_method(allow_none=True) is None:

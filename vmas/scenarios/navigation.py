@@ -48,7 +48,10 @@ class Scenario(BaseScenario):
 
         self.min_distance_between_entities = self.agent_radius * 2 + 0.05
         "*************************************************************************************************************"
-        self.world_semidim = min(self.x_semidim, self.y_semidim)
+        if self.x_semidim is None and self.y_semidim is None:
+            self.world_semidim = 1.0
+        else:
+            self.world_semidim = min(self.x_semidim, self.y_semidim)
         "*************************************************************************************************************"
         self.min_collision_distance = 0.005
 

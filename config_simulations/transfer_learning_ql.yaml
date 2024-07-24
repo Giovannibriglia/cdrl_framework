@@ -5,7 +5,7 @@
   'learning_rate': 0.0001
   'discount_factor': 0.98
   'min_epsilon': 0.001
-  'transfer_learning': /navigation/results_ok/qlearning_mdp.json
+  'transfer_learning': /causality_vmas/results_ok/qlearning_mdp.json
 
 #'causality_config':
   #'batch_timestep_update': 1000

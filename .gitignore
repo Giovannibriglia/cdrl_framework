@@ -1,4 +1,9 @@
 **/__pycache__/
-navigation/results/
-navigation/results_ok/
-navigation/causal_knowledge/
+causality_vmas/results/
+causality_vmas/results_ok/
+causality_vmas/causal_knowledge/
+causality_vmas/dataframes/
+
+
+
+

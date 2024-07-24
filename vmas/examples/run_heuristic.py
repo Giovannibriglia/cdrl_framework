@@ -75,11 +75,11 @@ def run_heuristic(
 if __name__ == "__main__":
     from vmas.scenarios.navigation import HeuristicPolicy
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = str(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
     run_heuristic(
-        scenario_name="navigation",
+        scenario_name="discovery",
         heuristic=HeuristicPolicy,
-        n_envs=300,
+        n_envs=10,
         n_steps=200,
         render=True,
         save_render=False,

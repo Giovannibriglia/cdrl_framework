@@ -9,8 +9,8 @@ import torch.nn.functional as F
 from collections import namedtuple, deque, defaultdict
 from torch import tensor, optim, Tensor
 from vmas.simulator.environment import Environment
-from navigation.causality_algos import CausalInferenceForRL, CausalDiscovery
-from navigation.utils import detach_dict, exploration_action, _state_to_tuple, get_rl_knowledge
+from causality_vmas.causality_algos import CausalInferenceForRL, CausalDiscovery
+from causality_vmas.utils import detach_dict, exploration_action, _state_to_tuple, get_rl_knowledge
 from path_repo import GLOBAL_PATH_REPO
 
 EXPLORATION_GAME_PERCENT = 0.7
@@ -98,7 +98,7 @@ class Causality:
         self.env = env
         self.action_space_size = env.action_space[f'agent_{agent_id}'].n
         self.agent_id = agent_id
-        self.scenario = 'navigation' + f'_agent_{self.agent_id}'
+        self.scenario = 'causality_vmas' + f'_agent_{self.agent_id}'
         self.continuous_actions = continuous_actions
         self._setup(causality_config)
 
@@ -153,7 +153,7 @@ class Causality:
 
                 if self.cd is None:
                     self.cd = CausalDiscovery(df=df_causality,
-                                              dir_name=f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge',
+                                              dir_name=f'{GLOBAL_PATH_REPO}/causality_vmas/causal_knowledge',
                                               env_name=self.scenario)
                 else:
                     self.cd.add_data(df_causality)
@@ -165,7 +165,7 @@ class Causality:
 
                 if self.ci is None:
                     self.ci = CausalInferenceForRL(df_for_ci, causal_graph,
-                                                   dir_name=f'{GLOBAL_PATH_REPO}/navigation/causal_knowledge',
+                                                   dir_name=f'{GLOBAL_PATH_REPO}/causality_vmas/causal_knowledge',
                                                    env_name=self.scenario)
                 else:
                     self.ci.add_data(df_for_ci, causal_graph)
@@ -218,7 +218,7 @@ class Causality:
 
 class QLearningAgent:
     def __init__(self, env: Environment, device: str = 'cpu', n_steps: int = 100000, agent_id: int = 0,
-                 algo_config: Dict = None, causality_config: Dict = None, seed: int = 42, scenario: str = 'navigation'):
+                 algo_config: Dict = None, causality_config: Dict = None, seed: int = 42, scenario: str = 'causality_vmas'):
 
         name = 'qlearning'
         self.seed = seed
@@ -284,7 +284,7 @@ class QLearningAgent:
             # print('exploration', reward_action_values, random_action)
             return torch.tensor([random_action], device=self.device)
         else:
-            # TODO: define "best" actions
+            # TODO: define quartili filter
             """if len(best_actions) > 0:
                 mask = np.zeros_like(state_action_values, dtype=bool)
                 mask[best_actions] = True
@@ -354,7 +354,7 @@ class QNetwork(nn.Module):
 
 class DQNAgent:
     def __init__(self, env: Environment, device: str = 'cpu', n_steps: int = 100000, agent_id: int = 0,
-                 algo_config: Dict = None, causality_config: Dict = None, seed: int = 42, scenario: str = 'navigation'):
+                 algo_config: Dict = None, causality_config: Dict = None, seed: int = 42, scenario: str = 'causality_vmas'):
         name = 'dqn'
         self.state_space_size = 18
 

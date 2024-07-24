@@ -3,7 +3,7 @@
   'name': 'dqn'
   'epsilon_start': 0.001
   'min_epsilon': 0.001
-  'transfer_learning': /navigation/results_ok/dqn_mdp.json
+  'transfer_learning': /causality_vmas/results_ok/dqn_mdp.json
 
 #'causality_config':
   #'batch_timestep_update': 1000

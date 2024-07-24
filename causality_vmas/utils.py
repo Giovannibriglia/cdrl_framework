@@ -1,6 +1,7 @@
 from collections import Counter
 from decimal import Decimal
 from itertools import combinations
+import multiprocessing
 from typing import Dict, Tuple, List
 import random
 import json
@@ -12,6 +13,7 @@ import itertools
 import numpy as np
 import pandas as pd
 import torch
+import yaml
 from causalnex.structure import StructureModel
 from matplotlib import pyplot as plt
 
@@ -51,7 +53,6 @@ def list_to_causal_graph(list_for_causal_graph: list) -> nx.DiGraph:
         dg.add_edge(cause, effect)
 
     return dg
-
 
 
 " ******************************************************************************************************************** "
@@ -184,8 +185,7 @@ def get_rl_knowledge(filepath, agent_id):
 
 " ******************************************************************************************************************** "
 
-
-def _rescale_value(kind: str, value: float | int, n_bins: int, x_semidim: float = None, y_semidim: float = None):
+"""def _rescale_value(kind: str, value: float | int, n_bins: int, x_semidim: float = None, y_semidim: float = None):
     def discretize_value(value, intervals):
         # Find the interval where the value fits
         for i in range(len(intervals) - 1):
@@ -243,12 +243,7 @@ def _rescale_value(kind: str, value: float | int, n_bins: int, x_semidim: float 
     return rescaled_value
 
 
-def discretize_df(dataframe: pd.DataFrame, n_bins: int, n_sensor_to_consider: int = None, x_semidim: float = None,
-                  y_semidim: float = None):
-    if n_sensor_to_consider is not None:
-        dataframe = _group_variables(dataframe, variable_to_group='sensor', N=n_sensor_to_consider)
-    else:
-        dataframe = dataframe.copy()
+def discretize_df(dataframe: pd.DataFrame, n_bins: int):
 
     std_dev = dataframe.std()
     non_zero_std_columns = std_dev[std_dev != 0].index
@@ -287,36 +282,65 @@ def discretize_df(dataframe: pd.DataFrame, n_bins: int, n_sensor_to_consider: in
 
     # print(new_dataframe['agent_0_next_DX'].std())
     # new_dataframe = new_dataframe.loc[:, new_dataframe.std() != 0]
-
-    # Visualizations
-    """for column in new_dataframe.columns:
-        plt.figure(figsize=(10, 6))
-
-        if pd.api.types.is_numeric_dtype(new_dataframe[column]):
-            plt.subplot(1, 2, 1)
-            sns.histplot(new_dataframe[column], kde=True)
-            plt.title(f'Histogram of {column}')
-
-            plt.subplot(1, 2, 2)
-            sns.boxplot(x=new_dataframe[column])
-            plt.title(f'Boxplot of {column}')
-
-        else:
-            plt.subplot(1, 2, 1)
-            sns.countplot(x=new_dataframe[column])
-            plt.title(f'Count Plot of {column}')
-
-            plt.subplot(1, 2, 2)
-            new_dataframe[column].value_counts().plot.pie(autopct='%1.1f%%')
-            plt.title(f'Pie Chart of {column}')
-
-        plt.tight_layout()
-        plt.show()"""
-
-    return new_dataframe
+   
+    return new_dataframe"""
 
 
-def _group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1) -> pd.DataFrame:
+def get_df_boundaries(dataframe: pd.DataFrame):
+    for col in dataframe.columns.to_list():
+        # if isinstance(dataframe[col][0], (int, float, np.int64, np.float64)):
+        iqm_mean, iqm_std = IQM_mean_std(dataframe[col])
+        print(
+            f'{col} -> max: {dataframe[col].max()}, min: {dataframe[col].min()}, mean: {dataframe[col].mean()}, std: {dataframe[col].std()}, iqm_mean: {iqm_mean}, iqm_std: {iqm_std}')
+
+    # fig = plt.figure(dpi=500, figsize=(16, 9))
+    # plt.plot(dataframe['agent_0_reward'])
+    # plt.show()
+
+
+" ******************************************************************************************************************** "
+
+
+def _discretize_value(value, intervals):
+    # Find the interval where the value fits
+    for i in range(len(intervals) - 1):
+        if intervals[i] <= value < intervals[i + 1]:
+            return (intervals[i] + intervals[i + 1]) / 2
+    # Handle the edge cases
+    if value < intervals[0]:
+        return intervals[0]
+    elif value >= intervals[-1]:
+        return intervals[-1]
+
+
+def _create_intervals(min_val, max_val, n_intervals, scale='linear'):
+    if scale == 'exponential':
+        # Generate n_intervals points using exponential scaling
+        intervals = np.logspace(0, 1, n_intervals, base=10) - 1
+        intervals = intervals / (10 - 1)  # Normalize to range 0-1
+        intervals = min_val + (max_val - min_val) * intervals
+    elif scale == 'linear':
+        intervals = np.linspace(min_val, max_val, n_intervals)
+    else:
+        raise ValueError("Unsupported scale type. Use 'exponential' or 'linear'.")
+    return intervals
+
+
+def discretize_dataframe(df, n_bins=50, scale='linear'):
+    discrete_df = df.copy()
+    for column in df.columns:
+        if 'action' not in column:
+            min_value = df[column].min()
+            max_value = df[column].max()
+            intervals = _create_intervals(min_value, max_value, n_bins, scale)
+            discrete_df[column] = df[column].apply(lambda x: _discretize_value(x, intervals))
+    return discrete_df
+
+
+" ******************************************************************************************************************** "
+
+
+def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1) -> pd.DataFrame:
     # Step 1: Identify columns to group
     variable_columns = [col for col in dataframe.columns if variable_to_group in col]
 
@@ -335,29 +359,52 @@ def _group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1
                     variable_number = ''.join(filter(str.isdigit, variable_number))  # Keep only numeric characters
                     dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = int(variable_number)
                 except (IndexError, ValueError) as e:
+                    print(e)
                     dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = None
             else:
                 dataframe.at[index, f'agent_0_{variable_to_group}_on_{i}'] = None
 
-    # Step 4: Drop original variable columns
+    # Step 4: Add column with the max value for each row
+    dataframe[f'max_value_{variable_to_group}'] = dataframe[variable_columns].max(axis=1)
+
+    # Step 5: Drop original variable columns if needed
     dataframe.drop(columns=variable_columns, inplace=True)
 
     return dataframe
 
 
-def get_df_boundaries(dataframe: pd.DataFrame):
-    for col in dataframe.columns.to_list():
-        if isinstance(dataframe[col][0], (int, float, np.int64, np.float64)):
-            iqm_mean, iqm_std = IQM_mean_std(dataframe[col])
-            print(
-                f'{col} -> max: {dataframe[col].max()}, min: {dataframe[col].min()}, mean: {dataframe[col].mean()}, std: {dataframe[col].std()}, iqm_mean: {iqm_mean}, iqm_std: {iqm_std}')
-
-    # fig = plt.figure(dpi=500, figsize=(16, 9))
-    # plt.plot(dataframe['agent_0_reward'])
-    # plt.show()
+" ******************************************************************************************************************** "
 
 
-def _constraints_causal_graph(causal_graph: nx.DiGraph):
+def constraints_causal_graph(causal_graph: nx.DiGraph):
     edges_to_remove = [(u, v) for u, v in causal_graph.edges() if 'sensor' in u and 'sensor' in v]
     causal_graph.remove_edges_from(edges_to_remove)
     return causal_graph
+
+
+" ******************************************************************************************************************** "
+
+
+def _process_approximation(params):
+    df, n_bins, n_sensors, n_rows = params
+    new_df = discretize_dataframe(df, n_bins)
+    new_df = group_variables(new_df, 'sensor', n_sensors)
+    agent0_columns = [col for col in new_df.columns if 'agent_0' in col]
+    new_df = new_df.loc[:n_rows, agent0_columns]
+    approx_dict = {'new_df': new_df, 'n_bins': n_bins, 'n_sensors': n_sensors}
+    return approx_dict
+
+
+def my_approximation(df: pd.DataFrame) -> List[Dict]:
+    with open('params_approximations.yaml', 'r') as file:
+        config_approximation = yaml.safe_load(file)
+
+    N_ROWS_APPROXIMATION = config_approximation['N_ROWS_APPROXIMATION']
+    N_BINS_DISCR_LIST = config_approximation['N_BINS_DISCR_LIST']
+    N_SENSORS_DISCR_LIST = config_approximation['N_SENSORS_DISCR_LIST']
+    params_list = [(df, n_bins, n_sensors, n_rows) for n_bins in N_BINS_DISCR_LIST for n_sensors in N_SENSORS_DISCR_LIST for n_rows in N_ROWS_APPROXIMATION]
+
+    with multiprocessing.Pool(multiprocessing.cpu_count()) as pool:
+        approximations = pool.map(_process_approximation, params_list)
+
+    return approximations

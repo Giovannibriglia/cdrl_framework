@@ -1,7 +1,7 @@
 import json
 from matplotlib import pyplot as plt
 from scipy.ndimage import gaussian_filter1d
-from navigation.utils import compute_avg_series_for_agent, IQM_mean_std
+from causality_vmas.utils import compute_avg_series_for_agent, IQM_mean_std
 
 metrics = ['actions', 'rewards', 'time', 'n_collisions']
 
@@ -29,7 +29,7 @@ def main(path_metrics):
 
 
 if __name__ == '__main__':
-    path_file_metrics = 'C:\\Users\giova\Documents\Research\cdrl_framework\\navigation\\results\\dqn_pomdp.json'
+    path_file_metrics = '/causality_vmas\\results\\dqn_pomdp.json'
     main(path_file_metrics)
 
     # TODO: manage other metrics
