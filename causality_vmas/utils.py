@@ -396,7 +396,7 @@ def _process_approximation(params):
 
 
 def my_approximation(df: pd.DataFrame) -> List[Dict]:
-    with open('params_approximations.yaml', 'r') as file:
+    with open(f'{GLOBAL_PATH_REPO}/causality_vmas/params_approximations.yaml', 'r') as file:
         config_approximation = yaml.safe_load(file)
 
     N_ROWS_APPROXIMATION = config_approximation['N_ROWS_APPROXIMATION']
