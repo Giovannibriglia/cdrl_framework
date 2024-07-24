@@ -1,4 +1,4 @@
-abs_path_causality_vmas = '../'
+abs_path_causality_vmas = '..'
 
 LABEL_approximation_parameters = 'approx_params'
 LABEL_ciq_results = 'scores'
