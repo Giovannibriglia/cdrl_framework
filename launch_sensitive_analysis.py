@@ -1,4 +1,4 @@
-from causality_vmas.find_best_df_task import main
+from causality_vmas.find_best_approximation import main
 
 if __name__ == '__main__':
     main()

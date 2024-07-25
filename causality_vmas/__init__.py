@@ -5,5 +5,12 @@ LABEL_ciq_results = 'scores'
 LABEL_dataframe_approximated = 'new_df'
 LABEL_scores_distance = 'res_score_dist'
 LABEL_scores_binary = 'res_score_binary'
-LABEL_dir_storing_dict_and_info = 'df_approx_and_info_'
+LABEL_dir_storing_dict_and_info = 'df_approx_and_info'
+LABEL_causal_graph = 'causal_graph'
+LABEL_bn_dict = 'bn_info'
+LABEL_dict_causality = 'causality'
 
+LABEL_kind_group_var = 'kind'
+LABEL_value_group_var = 'value'
+
+LABEL_reward_action_values = 'reward_action_values'

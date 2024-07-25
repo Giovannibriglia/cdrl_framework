@@ -1,13 +1,13 @@
 import itertools
 import os
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Any
 import re
 import networkx as nx
 import pandas as pd
 import random
 
-from pgmpy.inference import CausalInference
-from pgmpy.models import BayesianNetwork
+from pgmpy.inference.CausalInference import CausalInference
+from pgmpy.models.BayesianNetwork import BayesianNetwork
 import numpy as np
 from causallearn.search.ConstraintBased.PC import pc
 from causalnex.inference import InferenceEngine
@@ -22,27 +22,20 @@ import matplotlib.pyplot as plt
 import pgmpy
 import time
 
-FONT_SIZE_NODE_GRAPH = 7
-ARROWS_SIZE_NODE_GRAPH = 30
-NODE_SIZE_GRAPH = 1000
+from causality_vmas.utils import plot_graph, dict_to_bn
 
 COL_REWARD_ACTION_VALUES = 'reward_action_values'
 
 
 class CausalDiscovery:
-    def __init__(self, df: pd.DataFrame = None, dir_name: str = None, env_name: str = None):
+    def __init__(self, df: pd.DataFrame = None):
 
         self.cd_algo = None
         self.features_names = None
         self.causal_graph = None
         self.notears_graph = None
         self.df = None
-        self.env_name = env_name
-        if dir_name is not None or env_name is not None:
-            self.dir_save = f'{dir_name}/{self.env_name}'
-            os.makedirs(self.dir_save, exist_ok=True)
-        else:
-            self.dir_save = None
+
         random.seed(42)
         np.random.seed(42)
 
@@ -53,11 +46,6 @@ class CausalDiscovery:
             self.df = df
         else:
             self.df = pd.concat([self.df, df]).reset_index(drop=True)
-
-        reward_col = [s for s in self.df.columns.to_list() if 'reward' in s][0]
-
-        if self.dir_save is not None:
-            self.df.to_pickle(f'{self.dir_save}/df_{len(self.df)}.pkl')
 
         self.features_names = self.df.columns.to_list()
 
@@ -86,33 +74,6 @@ class CausalDiscovery:
     def return_df(self):
         return self.df
 
-    def plot_and_save_graph(self, if_save: bool = False, if_show: bool = False):
-
-        import warnings
-        warnings.filterwarnings("ignore")
-
-        fig = plt.figure(dpi=1000)
-        plt.title(f'{self.cd_algo} graph - {len(self.causal_graph)} nodes - {len(self.causal_graph.edges)} edges',
-                  fontsize=16)
-
-        nx.draw(self.causal_graph, with_labels=True, font_size=FONT_SIZE_NODE_GRAPH,
-                arrowsize=ARROWS_SIZE_NODE_GRAPH, arrows=True,
-                edge_color='orange', node_size=NODE_SIZE_GRAPH, font_weight='bold', node_color='skyblue',
-                pos=nx.circular_layout(self.causal_graph))
-
-        structure_to_save = [(x[0], x[1]) for x in self.causal_graph.edges]
-
-        if if_save:
-            if self.dir_save is not None:
-                plt.savefig(f'{self.dir_save}/{self.cd_algo}_graph.png')
-
-                with open(f'{self.dir_save}/{self.cd_algo}_graph_structure.json', 'w') as json_file:
-                    json.dump(structure_to_save, json_file)
-
-        if if_show:
-            plt.show()
-        plt.close(fig)
-
     def use_PC(self, show_progress) -> nx.DiGraph:
 
         # Clean the data
@@ -125,25 +86,24 @@ class CausalDiscovery:
         # Ensure no zero standard deviation
         stddev = data.std()
         if (stddev == 0).any():
-            stddev[stddev == 0] = np.inf  # Adjust as needed
+            stddev[stddev == 0] = np.inf
         # Convert the cleaned data to a numpy array
         data_array = data.values
 
         labels = [f'{col}' for i, col in enumerate(self.features_names)]
         cg = pc(data_array, show_progress=show_progress)
 
-        # Create a NetworkX graph
         G = nx.DiGraph()
         dict_nodes_number = {}
-        # Add nodes with proper labels
+        # Add nodes
         for node in cg.G.get_nodes():
             node_name = node.get_name()
             node_index = int(node_name[1:]) - 1
             node_label = labels[node_index]
-            G.add_node(node_name, label=node_label)
+            G.add_node(node_label)
             dict_nodes_number[node_name] = node_label
 
-        # Add edges from the original graph to the new graph
+        # Add edges
         for edge in cg.G.get_graph_edges():
             source_name = edge.get_node1().get_name()
             source_label = dict_nodes_number[source_name]
@@ -169,11 +129,11 @@ class CausalDiscovery:
         return G
 
     def use_MY(self, graph: nx.DiGraph, show_progress: bool = False) -> nx.DiGraph:
-
+        print('***************** RIFAREEEEEEEEEEEEE ******************')
         df = self.df.copy()
 
         print('Bayesian network definition...')
-        bn = causalnex.network.BayesianNetwork(graph)
+        bn = causalnex.network.BayesianNetwork(graph.edges)
         print('Bayesian network fitting...')
         bn = bn.fit_node_states_and_cpds(df)
 
@@ -485,22 +445,25 @@ def inference_function(observation: Dict, ie: InferenceEngine, reward_col: str,
 
 
 class SingleCausalInference:
-    def __init__(self, df: pd.DataFrame, causal_graph: nx.DiGraph):
+    def __init__(self, df: pd.DataFrame, causal_graph: nx.DiGraph, dict_ready_cbn: {} = None):
         self.df = df
         self.causal_graph = causal_graph
         self.features = self.causal_graph.nodes
 
-        # Convert the networkx graph to a pgmpy Bayesian Network
-        bn = pgmpy.models.BayesianNetwork()
-        bn.add_edges_from(ebunch=self.causal_graph.edges())
-        # Estimate CPDs using MaximumLikelihoodEstimator
-        bn.fit(df, estimator=MaximumLikelihoodEstimator)
-        # Check if the model is valid
-        assert bn.check_model()
-        # Create a CausalInference object
-        self.ci = CausalInference(bn)
+        if dict_ready_cbn is None:
+            self.cbn = BayesianNetwork()
+            self.cbn.add_edges_from(ebunch=self.causal_graph.edges())
+            self.cbn.fit(self.df, estimator=MaximumLikelihoodEstimator)
+        else:
+            self.cbn = dict_to_bn(dict_ready_cbn)
 
-    def infer(self, input_dict_do: Dict, target_variable: str, adjustment_set=None) -> Dict:
+        assert self.cbn.check_model()
+        self.ci = CausalInference(self.cbn)
+
+    def return_cbn(self) -> BayesianNetwork:
+        return self.cbn
+
+    def infer(self, input_dict_do: Dict, target_variable: str, evidence=None, adjustment_set=None) -> Dict:
         # print(f'infer: {input_dict_do} - {target_variable}')
 
         # Ensure the target variable is not in the evidence
@@ -527,7 +490,7 @@ class SingleCausalInference:
             query_result = self.ci.query(
                 variables=[target_variable],
                 do=input_dict_do_clean,
-                evidence=input_dict_do_clean,
+                evidence=input_dict_do_clean if evidence is None else evidence,
                 adjustment_set=adjustment_set,
                 show_progress=False
             )

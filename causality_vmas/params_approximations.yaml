@@ -1,4 +1,9 @@
 
-N_ROWS_APPROXIMATION: [200000]
-N_BINS_DISCR_LIST: [10, 25, 50, 75, 100]
-N_SENSORS_DISCR_LIST: [1, 3, 5, 8, 10]
+navigation:
+      ROWS: [200000] # 200000
+      BINS: [10, 25, 50, 75, 100] # 10, 25, 50, 75, 100
+      SENSORS: [1, 2, 3, 4] #[1, 2, 3, 4]
+
+discovery:
+      N_AGENTS: [20, 40]
+      N_ROCKETS: [10, 20]
