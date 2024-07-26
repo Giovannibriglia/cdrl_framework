@@ -48,12 +48,12 @@ def detach_dict(d, func=detach_and_cpu):
 " ******************************************************************************************************************** "
 
 
-def list_to_causal_graph(list_for_causal_graph: list) -> nx.DiGraph:
+def list_to_graph(graph: list) -> nx.DiGraph:
     # Create a new directed graph
     dg = nx.DiGraph()
 
     # Add edges to the directed graph
-    for cause, effect in list_for_causal_graph:
+    for cause, effect in graph:
         dg.add_edge(cause, effect)
 
     return dg
@@ -391,6 +391,15 @@ def constraints_causal_graph(causal_graph: nx.DiGraph):
 
 
 def _discretize_value(value, intervals):
+    idx = np.digitize(value, intervals, right=False)
+    if idx == 0:
+        return intervals[0]
+    elif idx >= len(intervals):
+        return intervals[-1]
+    return (intervals[idx - 1] + intervals[idx]) / 2
+
+
+"""def _discretize_value(value, intervals):
     # Find the interval where the value fits
     for i in range(len(intervals) - 1):
         if intervals[i] <= value < intervals[i + 1]:
@@ -399,7 +408,7 @@ def _discretize_value(value, intervals):
     if value < intervals[0]:
         return intervals[0]
     elif value >= intervals[-1]:
-        return intervals[-1]
+        return intervals[-1]"""
 
 
 def _create_intervals(min_val, max_val, n_intervals, scale='linear'):
@@ -423,10 +432,11 @@ def discretize_dataframe(df, n_bins=50, scale='linear', not_discretize_these: Li
             max_value = df[column].max()
             intervals = _create_intervals(min_value, max_value, n_bins, scale)
             discrete_df[column] = df[column].apply(lambda x: _discretize_value(x, intervals))
+            # discrete_df[column] = np.vectorize(lambda x: intervals[_discretize_value(x, intervals)])(df[column])
     return discrete_df
 
 
-def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1, n_bins: int = 10) -> pd.DataFrame:
+def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1) -> pd.DataFrame:
     first_key = LABEL_kind_group_var
     second_key = LABEL_value_group_var
 
@@ -475,23 +485,21 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
     df, params = input_elements
     n_bins = params.get('BINS', 10)
     n_sensors = params.get('SENSORS', 1)
-    n_rows = params.get('ROWS', int(len(df)/2))
+    n_rows = params.get('ROWS', int(len(df) / 2))
 
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
     df = df.loc[:, agent0_columns]
-
-    action_col = [col for col in df.columns if 'action' in col]
-    not_discretize = [action_col] if len(df[action_col].value_counts()) < 20 else []
-
+    # TODO: chiedo a stefano cosa ne pensa: è ok 10 oppure mettiamo n_bins?
+    not_discretize = [s for s in df.columns.to_list() if len(df[s].unique()) <= 10]
     new_df = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize)
-    new_df = group_variables(new_df, 'sensor', n_sensors, n_bins)
+    new_df = group_variables(new_df, 'sensor', n_sensors)
     new_df = new_df.loc[:n_rows, :]
     approx_dict = {'new_df': new_df, 'n_bins': n_bins, 'n_sensors': n_sensors, 'n_rows': n_rows}
     return approx_dict
 
 
 def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
-    with open(f'{GLOBAL_PATH_REPO}/causality_vmas/params_approximations.yaml', 'r') as file:
+    with open(f'{GLOBAL_PATH_REPO}/causality_vmas/s2_0_params_approximations.yaml', 'r') as file:
         config_approximation = yaml.safe_load(file)
 
         approx_params_task = config_approximation[task_name]
@@ -513,30 +521,6 @@ def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
 
     return approximations
 
-
-"""def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
-    with open(f'{GLOBAL_PATH_REPO}/causality_vmas/params_approximations.yaml', 'r') as file:
-        config_approximation = yaml.safe_load(file)
-
-        approx_params_task = config_approximation[task_name]
-        params = {key: values for key, values in approx_params_task.items()}
-
-        all_combs = list(itertools.product(*params.values()))
-        formatted_combinations = [dict(zip(params.keys(), comb)) for comb in all_combs]
-
-        N_ROWS_APPROXIMATION = config_approximation['N_ROWS_APPROXIMATION']
-        N_BINS_DISCR_LIST = config_approximation['N_BINS_DISCR_LIST']
-        N_SENSORS_DISCR_LIST = config_approximation['N_SENSORS_DISCR_LIST']
-        params_list = [(df, n_bins, n_sensors, n_rows) for formatted_combinations]
-
-        if multiprocessing.get_start_method(allow_none=True) is None:
-            multiprocessing.set_start_method('spawn')
-
-        with multiprocessing.Pool(multiprocessing.cpu_count()) as pool:
-            approximations = pool.map(_process_approximation, params_list)
-
-
-    return approximations"""
 
 " ******************************************************************************************************************** "
 
@@ -587,8 +571,7 @@ def save_json_incrementally(data, folder_path, prefix):
 
 " ******************************************************************************************************************** "
 
-
-def bn_to_dict(model: BayesianNetwork):
+"""def bn_to_dict(model: BayesianNetwork) -> Dict:
     model_data = {
         "nodes": list(model.nodes()),
         "edges": list(model.edges()),
@@ -596,6 +579,7 @@ def bn_to_dict(model: BayesianNetwork):
     }
 
     for cpd in model.get_cpds():
+
         cpd_data = {
             "variable": cpd.variable,
             "variable_card": cpd.variable_card,
@@ -611,18 +595,83 @@ def bn_to_dict(model: BayesianNetwork):
 def dict_to_bn(model_data: Dict) -> BayesianNetwork:
     model = BayesianNetwork()
 
+    # Add nodes and edges
     model.add_nodes_from(model_data["nodes"])
-
     model.add_edges_from(model_data["edges"])
 
+    # Add CPDs
     for variable, cpd_data in model_data["cpds"].items():
+        variable_card = cpd_data["variable_card"]
+        evidence_card = cpd_data["evidence_card"]
+
+        # Convert the values to a numpy array and reshape to 2D
+        values = np.array(cpd_data["values"])
+
+        if evidence_card:
+            values = values.reshape(variable_card, np.prod(evidence_card))
+        else:
+            values = values.reshape(variable_card, 1)
+
         cpd = TabularCPD(
             variable=cpd_data["variable"],
-            variable_card=cpd_data["variable_card"],
-            values=cpd_data["values"],
+            variable_card=variable_card,
+            values=values.tolist(),
             evidence=cpd_data["evidence"],
-            evidence_card=cpd_data["evidence_card"]
+            evidence_card=evidence_card
         )
         model.add_cpds(cpd)
 
+    # Check the model for correctness
+    model.check_model()
+
+    return model"""
+
+
+def bn_to_dict(model: BayesianNetwork):
+    model_data = {
+        "nodes": list(model.nodes()),
+        "edges": list(model.edges()),
+        "cpds": {}
+    }
+
+    for cpd in model.get_cpds():
+        cpd_data = {
+            "variable": cpd.variable,
+            "variable_card": cpd.variable_card,
+            "values": cpd.values.tolist(),
+            "evidence": cpd.variables[1:],
+            "evidence_card": cpd.cardinality[1:].tolist() if len(cpd.variables) > 1 else [],
+            "state_names": cpd.state_names
+        }
+        model_data["cpds"][cpd.variable] = cpd_data
+
+    return model_data
+
+
+def dict_to_bn(model_data):
+    model = BayesianNetwork()
+    model.add_nodes_from(model_data["nodes"])
+    model.add_edges_from(model_data["edges"])
+
+    for variable, cpd_data in model_data["cpds"].items():
+        variable_card = cpd_data["variable_card"]
+        evidence_card = cpd_data["evidence_card"]
+
+        values = np.array(cpd_data["values"])
+        if evidence_card:
+            values = values.reshape(variable_card, np.prod(evidence_card))
+        else:
+            values = values.reshape(variable_card, 1)
+
+        cpd = TabularCPD(
+            variable=cpd_data["variable"],
+            variable_card=variable_card,
+            values=values.tolist(),
+            evidence=cpd_data["evidence"],
+            evidence_card=evidence_card,
+            state_names=cpd_data["state_names"]
+        )
+        model.add_cpds(cpd)
+
+    model.check_model()
     return model

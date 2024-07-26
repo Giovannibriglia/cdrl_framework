@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import pgmpy
 import time
 
-from causality_vmas.utils import plot_graph, dict_to_bn
+from causality_vmas.utils import plot_graph, dict_to_bn, bn_to_dict
 
 COL_REWARD_ACTION_VALUES = 'reward_action_values'
 
@@ -445,7 +445,7 @@ def inference_function(observation: Dict, ie: InferenceEngine, reward_col: str,
 
 
 class SingleCausalInference:
-    def __init__(self, df: pd.DataFrame, causal_graph: nx.DiGraph, dict_ready_cbn: {} = None):
+    def __init__(self, df: pd.DataFrame, causal_graph: nx.DiGraph, dict_ready_cbn: Dict = None):
         self.df = df
         self.causal_graph = causal_graph
         self.features = self.causal_graph.nodes
@@ -458,6 +458,7 @@ class SingleCausalInference:
             self.cbn = dict_to_bn(dict_ready_cbn)
 
         assert self.cbn.check_model()
+
         self.ci = CausalInference(self.cbn)
 
     def return_cbn(self) -> BayesianNetwork:
@@ -467,14 +468,14 @@ class SingleCausalInference:
         # print(f'infer: {input_dict_do} - {target_variable}')
 
         # Ensure the target variable is not in the evidence
-        input_dict_do_clean = {k: v for k, v in input_dict_do.items() if k != target_variable}
+        input_dict_do_ok = {k: v for k, v in input_dict_do.items() if k != target_variable}
 
-        # print(f'Cleaned input (evidence): {input_dict_do_clean}')
+        # print(f'Cleaned input (evidence): {input_dict_do_ok}')
         # print(f'Target variable: {target_variable}')
 
         if adjustment_set is None:
             # Compute an adjustment set if not provided
-            do_vars = [var for var, state in input_dict_do_clean.items()]
+            do_vars = [var for var, state in input_dict_do_ok.items()]
             adjustment_set = set(
                 itertools.chain(*[self.causal_graph.predecessors(var) for var in do_vars])
             )
@@ -482,26 +483,56 @@ class SingleCausalInference:
         else:
             # print(f'Provided adjustment set: {adjustment_set}')
             pass
-
         # Ensure target variable is not part of the adjustment set
         adjustment_set.discard(target_variable)
 
-        try:
-            query_result = self.ci.query(
-                variables=[target_variable],
-                do=input_dict_do_clean,
-                evidence=input_dict_do_clean if evidence is None else evidence,
-                adjustment_set=adjustment_set,
-                show_progress=False
-            )
-            # print(f'Query result: {query_result}')
+        query_result = self.ci.query(
+            variables=[target_variable],
+            do=input_dict_do_ok,
+            evidence=input_dict_do_ok if evidence is None else evidence,
+            adjustment_set=adjustment_set,
+            show_progress=False
+        )
+        # print(f'Query result: {query_result}')
 
-            # Convert DiscreteFactor to a dictionary
-            result_dict = {str(state): float(query_result.values[idx]) for idx, state in
-                           enumerate(query_result.state_names[target_variable])}
-            # print(f'Result dictionary: {result_dict}')
-        except ValueError as e:
-            print(f'Error during query: {e}')
-            raise e
+        # Convert DiscreteFactor to a dictionary
+        result_dict = {str(state): float(query_result.values[idx]) for idx, state in
+                       enumerate(query_result.state_names[target_variable])}
+        # print(f'Result distributions: {result_dict}')
 
         return result_dict
+
+    @staticmethod
+    def _check_states(input_dict_do, evidence, adjustment_set):
+        def is_numeric(value):
+            try:
+                # Convert value to a numpy array and check for NaN or infinite values
+                value = np.array(value, dtype=float)
+                return np.isnan(value).any() or np.isinf(value).any()
+            except (ValueError, TypeError):
+                return False
+
+        def check_for_nan_or_infinite(data):
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    if is_numeric(value):
+                        print(f"Warning: {key} contains NaN or infinite values.")
+                        return True
+            elif isinstance(data, set):
+                for value in data:
+                    if is_numeric(value):
+                        print(f"Warning: Set contains NaN or infinite values: {value}")
+                        return True
+            else:
+                print(f"Unsupported data type: {type(data)}")
+                return True  # Return True to signal an issue if data type is unsupported
+            return False
+
+        # Check the input data
+        if check_for_nan_or_infinite(input_dict_do):
+            raise ValueError("Input data contains NaN or infinite values.")
+        if evidence is not None and check_for_nan_or_infinite(evidence):
+            raise ValueError("Evidence data contains NaN or infinite values.")
+        if adjustment_set is not None and check_for_nan_or_infinite(adjustment_set):
+            raise ValueError("Adjustment set data contains NaN or infinite values.")
+

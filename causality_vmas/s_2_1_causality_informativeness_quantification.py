@@ -1,14 +1,13 @@
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict, Tuple
-
-import numpy as np
 import pandas as pd
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 from causality_vmas.causality_algos import CausalDiscovery, SingleCausalInference
-from causality_vmas.utils import get_df_boundaries, constraints_causal_graph, discretize_dataframe, bn_to_dict, \
+from causality_vmas.utils import get_df_boundaries, constraints_causal_graph, bn_to_dict, \
     graph_to_list, _navigation_approximation
-from causality_vmas import abs_path_causality_vmas, LABEL_scores_distance, LABEL_scores_binary, LABEL_causal_graph, \
-    LABEL_bn_dict
+from causality_vmas import abs_path_causality_vmas, LABEL_causal_graph, LABEL_bn_dict, LABEL_target_value, \
+    LABEL_predicted_value
 
 show_progress_cd = True
 
@@ -53,35 +52,45 @@ class CausalityInformativenessQuantification:
         cbn_in_dict = bn_to_dict(cbn)
 
         causality_dict = {LABEL_causal_graph: graph_to_list(self.causal_graph), LABEL_bn_dict: cbn_in_dict}
-        res_score_dict = {LABEL_scores_distance: [], LABEL_scores_binary: []}
+        res_score_dict = {LABEL_target_value: [], LABEL_predicted_value: []}
 
         selected_columns = [s for s in self.df.columns.to_list() if s != self.target_feature]
 
-        for_cycle = tqdm(self.df.iterrows(), f'Inferring on {len(self.df)}') if show_progress else self.df.iterrows()
-        for index, row in for_cycle:
-            input_ci = row[selected_columns].to_dict()
-            try:
-                output_ci = single_ci.infer(input_ci, self.target_feature)
+        tasks = list(self.df.iterrows())
 
-                value_target = row[self.target_feature]
-                value_pred = max(output_ci, key=output_ci.get)
-                value_pred = type(value_target)(value_pred)
-                res_score_dict[LABEL_scores_distance].append(value_pred - value_target)
-                res_score_dict[LABEL_scores_binary].append(1 if value_target == value_pred else 0)
-            except Exception as e:
-                print(e)
-                res_score_dict[LABEL_scores_distance].append(-np.inf)
-                res_score_dict[LABEL_scores_binary].append(0)
+        with ProcessPoolExecutor() as executor:
+            futures = [executor.submit(self._process_row, task, selected_columns, self.target_feature, single_ci) for
+                       task in tasks]
+            if show_progress:
+                for future in tqdm(as_completed(futures), total=len(futures), desc=f'Inferring causal knowledge...'):
+                    target_value, pred_value = future.result()
+                    res_score_dict[LABEL_target_value].append(target_value)
+                    res_score_dict[LABEL_predicted_value].append(pred_value)
+            else:
+                for future in as_completed(futures):
+                    target_value, pred_value = future.result()
+                    res_score_dict[LABEL_target_value].append(target_value)
+                    res_score_dict[LABEL_predicted_value].append(pred_value)
 
         return res_score_dict, causality_dict
+
+    @staticmethod
+    def _process_row(index_row, selected_columns, target_feature, single_ci) -> Tuple[float, float]:
+        index, row = index_row
+        input_ci = row[selected_columns].to_dict()
+        output_ci = single_ci.infer(input_ci, target_feature)
+        value_target = row[target_feature]
+        value_pred = max(output_ci, key=output_ci.get)
+        value_pred = type(value_target)(value_pred)
+        return value_target, value_pred
 
 
 if __name__ == '__main__':
     df = pd.read_pickle(f'{abs_path_causality_vmas}/causality_vmas/dataframes/navigation_mdp.pkl')
 
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
-    df = df.loc[:200001, agent0_columns]
-    dict_approx = _navigation_approximation((df, 10, 2, 100000))
+    df = df.loc[:20001, agent0_columns]
+    dict_approx = _navigation_approximation((df, {'BINS': 10, 'SENSORS': 1, 'ROWS': 20000}))
     df = dict_approx['new_df']
     # get_df_boundaries(df)
 
