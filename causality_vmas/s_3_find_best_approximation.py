@@ -85,7 +85,7 @@ class BestApprox:
     def _compute_binary_clf_metrics(self, true_labels: List, predicted_labels: List) -> Dict:
 
         # Calculate metrics
-        accuracy = accuracy_score(true_labels, predicted_labels, normalize)
+        accuracy = accuracy_score(true_labels, predicted_labels)
         precision = precision_score(true_labels, predicted_labels)
         recall = recall_score(true_labels, predicted_labels)
         f1 = f1_score(true_labels, predicted_labels)

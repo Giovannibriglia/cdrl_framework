@@ -1,10 +1,10 @@
 import itertools
-import os
-from typing import Tuple, List, Dict, Any
+from typing import Dict
 import re
 import networkx as nx
 import pandas as pd
 import random
+import multiprocessing
 
 from pgmpy.inference.CausalInference import CausalInference
 from pgmpy.models.BayesianNetwork import BayesianNetwork
@@ -12,17 +12,10 @@ import numpy as np
 from causallearn.search.ConstraintBased.PC import pc
 from causalnex.inference import InferenceEngine
 import causalnex
-from causalnex.structure import StructureModel
 from causalnex.structure.pytorch import from_pandas
-import json
-import multiprocessing
 from pgmpy.estimators import MaximumLikelihoodEstimator
 from tqdm.auto import tqdm
-import matplotlib.pyplot as plt
-import pgmpy
-import time
-
-from causality_vmas.utils import plot_graph, dict_to_bn, bn_to_dict
+from causality_vmas.utils import plot_graph, dict_to_bn
 
 COL_REWARD_ACTION_VALUES = 'reward_action_values'
 
@@ -535,4 +528,3 @@ class SingleCausalInference:
             raise ValueError("Evidence data contains NaN or infinite values.")
         if adjustment_set is not None and check_for_nan_or_infinite(adjustment_set):
             raise ValueError("Adjustment set data contains NaN or infinite values.")
-

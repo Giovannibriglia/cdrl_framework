@@ -1,3 +1,4 @@
+import gc
 from collections import Counter
 from decimal import Decimal
 from itertools import combinations
@@ -9,6 +10,7 @@ import os
 import pickle
 import re
 import networkx as nx
+import psutil
 import seaborn as sns
 import itertools
 import numpy as np
@@ -483,7 +485,7 @@ def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1)
 
 def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
     df, params = input_elements
-    n_bins = params.get('BINS', 10)
+    n_bins = params.get('BINS', 20)
     n_sensors = params.get('SENSORS', 1)
     n_rows = params.get('ROWS', int(len(df) / 2))
 
@@ -493,7 +495,13 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
     not_discretize = [s for s in df.columns.to_list() if len(df[s].unique()) <= 10]
     new_df = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize)
     new_df = group_variables(new_df, 'sensor', n_sensors)
-    new_df = new_df.loc[:n_rows, :]
+    new_df = new_df.sample(n_rows-1, random_state=42)  # new_df.loc[:n_rows - 1, :]
+
+    for col in new_df.columns.to_list():
+        if len(new_df[col].unique()) > n_bins and 'kind' not in col:
+            print(
+                f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
+
     approx_dict = {'new_df': new_df, 'n_bins': n_bins, 'n_sensors': n_sensors, 'n_rows': n_rows}
     return approx_dict
 
@@ -510,14 +518,12 @@ def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
 
         all_params_list = [(df, single_task_combo_params) for single_task_combo_params in formatted_combinations]
 
-        if multiprocessing.get_start_method(allow_none=True) is None:
-            multiprocessing.set_start_method('spawn')
-
         if task_name == 'navigation':
             approximator = _navigation_approximation
         # TODO: others
         with multiprocessing.Pool(multiprocessing.cpu_count()) as pool:
             approximations = pool.map(approximator, all_params_list)
+            gc.collect()
 
     return approximations
 
@@ -571,61 +577,6 @@ def save_json_incrementally(data, folder_path, prefix):
 
 " ******************************************************************************************************************** "
 
-"""def bn_to_dict(model: BayesianNetwork) -> Dict:
-    model_data = {
-        "nodes": list(model.nodes()),
-        "edges": list(model.edges()),
-        "cpds": {}
-    }
-
-    for cpd in model.get_cpds():
-
-        cpd_data = {
-            "variable": cpd.variable,
-            "variable_card": cpd.variable_card,
-            "values": cpd.values.tolist(),
-            "evidence": cpd.variables[1:],
-            "evidence_card": cpd.cardinality[1:].tolist() if len(cpd.variables) > 1 else []
-        }
-        model_data["cpds"][cpd.variable] = cpd_data
-
-    return model_data
-
-
-def dict_to_bn(model_data: Dict) -> BayesianNetwork:
-    model = BayesianNetwork()
-
-    # Add nodes and edges
-    model.add_nodes_from(model_data["nodes"])
-    model.add_edges_from(model_data["edges"])
-
-    # Add CPDs
-    for variable, cpd_data in model_data["cpds"].items():
-        variable_card = cpd_data["variable_card"]
-        evidence_card = cpd_data["evidence_card"]
-
-        # Convert the values to a numpy array and reshape to 2D
-        values = np.array(cpd_data["values"])
-
-        if evidence_card:
-            values = values.reshape(variable_card, np.prod(evidence_card))
-        else:
-            values = values.reshape(variable_card, 1)
-
-        cpd = TabularCPD(
-            variable=cpd_data["variable"],
-            variable_card=variable_card,
-            values=values.tolist(),
-            evidence=cpd_data["evidence"],
-            evidence_card=evidence_card
-        )
-        model.add_cpds(cpd)
-
-    # Check the model for correctness
-    model.check_model()
-
-    return model"""
-
 
 def bn_to_dict(model: BayesianNetwork):
     model_data = {
@@ -675,3 +626,10 @@ def dict_to_bn(model_data):
 
     model.check_model()
     return model
+
+
+" ******************************************************************************************************************** "
+
+
+def split_dataframe(df: pd.DataFrame, num_splits: int) -> List:
+    return [df.iloc[i::num_splits, :] for i in range(num_splits)]
