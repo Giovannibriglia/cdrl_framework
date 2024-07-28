@@ -391,16 +391,6 @@ def constraints_causal_graph(causal_graph: nx.DiGraph):
 
 " ******************************************************************************************************************** "
 
-
-def _discretize_value(value, intervals):
-    idx = np.digitize(value, intervals, right=False)
-    if idx == 0:
-        return intervals[0]
-    elif idx >= len(intervals):
-        return intervals[-1]
-    return (intervals[idx - 1] + intervals[idx]) / 2
-
-
 """def _discretize_value(value, intervals):
     # Find the interval where the value fits
     for i in range(len(intervals) - 1):
@@ -411,6 +401,15 @@ def _discretize_value(value, intervals):
         return intervals[0]
     elif value >= intervals[-1]:
         return intervals[-1]"""
+
+
+def _discretize_value(value, intervals):
+    idx = np.digitize(value, intervals, right=False)
+    if idx == 0:
+        return intervals[0]
+    elif idx >= len(intervals):
+        return intervals[-1]
+    return (intervals[idx - 1] + intervals[idx]) / 2
 
 
 def _create_intervals(min_val, max_val, n_intervals, scale='linear'):
@@ -428,14 +427,16 @@ def _create_intervals(min_val, max_val, n_intervals, scale='linear'):
 
 def discretize_dataframe(df, n_bins=50, scale='linear', not_discretize_these: List = None):
     discrete_df = df.copy()
+    variable_discrete_intervals = {}
     for column in df.columns:
         if column not in not_discretize_these:
             min_value = df[column].min()
             max_value = df[column].max()
             intervals = _create_intervals(min_value, max_value, n_bins, scale)
+            variable_discrete_intervals[column] = intervals.tolist()
             discrete_df[column] = df[column].apply(lambda x: _discretize_value(x, intervals))
             # discrete_df[column] = np.vectorize(lambda x: intervals[_discretize_value(x, intervals)])(df[column])
-    return discrete_df
+    return discrete_df, variable_discrete_intervals
 
 
 def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1) -> pd.DataFrame:
@@ -493,16 +494,17 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
     df = df.loc[:, agent0_columns]
     # TODO: chiedi a stefano cosa ne pensa: è ok 10 oppure mettiamo n_bins?
     not_discretize = [s for s in df.columns.to_list() if len(df[s].unique()) <= 10]
-    new_df = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize)
+    new_df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize)
     new_df = group_variables(new_df, 'sensor', n_sensors)
-    new_df = new_df.loc[:n_rows - 1, :] # new_df.sample(n_rows-1, random_state=42)
+    new_df = new_df.loc[:n_rows - 1, :]  # new_df.sample(n_rows-1, random_state=42)
 
     for col in new_df.columns.to_list():
         if len(new_df[col].unique()) > n_bins and 'kind' not in col:
             print(
                 f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
 
-    approx_dict = {'new_df': new_df, 'n_bins': n_bins, 'n_sensors': n_sensors, 'n_rows': n_rows}
+    approx_dict = {'new_df': new_df, 'n_bins': n_bins, 'n_sensors': n_sensors, 'n_rows': n_rows,
+                   'discrete_intervals': discrete_intervals}
     return approx_dict
 
 

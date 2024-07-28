@@ -46,7 +46,7 @@ class BestApprox:
             target_values = scores[f'{LABEL_target_value}']
             pred_values = scores[f'{LABEL_predicted_value}']
 
-            binary_metrics = self._compute_binary_clf_metrics(target_values, pred_values)
+            binary_metrics = {} #self._compute_binary_clf_metrics(target_values, pred_values)
             distance_metrics = self._compute_distance_metrics(target_values, pred_values)
 
             dict_resume = {LABEL_approximation_parameters: params_info,
@@ -84,13 +84,15 @@ class BestApprox:
 
     def _compute_binary_clf_metrics(self, true_labels: List, predicted_labels: List) -> Dict:
 
+        self.binary_metrics_names = ['accuracy', 'precision', 'f1', 'recall']
+
+
+
         # Calculate metrics
         accuracy = accuracy_score(true_labels, predicted_labels)
         precision = precision_score(true_labels, predicted_labels)
         recall = recall_score(true_labels, predicted_labels)
         f1 = f1_score(true_labels, predicted_labels)
-
-        self.binary_metrics_names = ['accuracy', 'precision', 'f1', 'recall']
 
         dict_binary_metrics = {
             'accuracy': accuracy,
