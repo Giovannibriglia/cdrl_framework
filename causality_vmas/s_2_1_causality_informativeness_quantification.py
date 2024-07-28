@@ -207,7 +207,7 @@ class CausalityInformativenessQuantification:
 
         total_cpus = os.cpu_count()
         cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = min(10, int(total_cpus / 2 * (1 - cpu_usage / 100)))
+        free_cpus = min(5, int(total_cpus / 2 * (1 - cpu_usage / 100)))
         n_workers = max(1, free_cpus)  # Ensure at least one worker is used
 
         selected_columns = [s for s in self.df.columns.to_list() if s != self.target_feature]
