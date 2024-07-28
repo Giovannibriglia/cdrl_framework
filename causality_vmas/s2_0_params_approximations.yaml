@@ -1,7 +1,7 @@
 
 navigation:
-      ROWS: [200000]
-      BINS: [50, 75, 100]
+      ROWS: [50000]
+      BINS: [10, 20]
       SENSORS: [1, 2, 3]
 
 discovery:
