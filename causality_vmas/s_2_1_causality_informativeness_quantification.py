@@ -113,9 +113,9 @@ class CausalityInformativenessQuantification:
         if not self.reward_col_name:
             raise ValueError('Reward column did not find')
 
-        if target_feature == 'action':
+        if 'action' in target_feature:
             self.target_feature = self.action_col_name
-        elif target_feature == 'reward':
+        elif 'reward' in target_feature:
             self.target_feature = self.reward_col_name
         else:
             raise ValueError('Target feature is not correct')
@@ -126,7 +126,7 @@ class CausalityInformativenessQuantification:
         return res_score, res_causal
 
     def cd_process(self):
-        logging.info('\nCausal discovery...')
+        logging.info('Causal discovery...')
         cd = CausalDiscovery(self.df)
         cd.training(cd_algo=self.cd_algo, show_progress=show_progress_cd)
         self.causal_graph = cd.return_causal_graph()
@@ -188,35 +188,39 @@ class CausalityInformativenessQuantification:
         return res_score_dict, causality_dict"""
 
     def ci_assessment(self, show_progress: bool = False) -> Tuple[Dict, Dict]:
+        res_score_dict = {LABEL_target_value: [], LABEL_predicted_value: []}
+        causality_dict = {LABEL_causal_graph: graph_to_list(self.causal_graph)}
+
         logging.info(f'Setting up causal bayesian network...')
         try:
             single_ci = SingleCausalInference(self.df, self.causal_graph)
         except Exception as e:
             logging.error(f'Error in causal bayesian network definition: {e}')
-            return {}, {}
+            return res_score_dict, causality_dict
 
         cbn = single_ci.return_cbn()
         cbn_in_dict = bn_to_dict(cbn)
 
-        causality_dict = {LABEL_causal_graph: graph_to_list(self.causal_graph), LABEL_bn_dict: cbn_in_dict}
-        res_score_dict = {LABEL_target_value: [], LABEL_predicted_value: []}
-
-        selected_columns = [s for s in self.df.columns.to_list() if s != self.target_feature]
+        causality_dict[LABEL_bn_dict] = cbn_in_dict
 
         tasks = list(self.df.iterrows())
 
         total_cpus = os.cpu_count()
         cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = min(10, int(total_cpus/2 * (1 - cpu_usage / 100)))
+        free_cpus = min(10, int(total_cpus / 2 * (1 - cpu_usage / 100)))
         n_workers = max(1, free_cpus)  # Ensure at least one worker is used
+
+        selected_columns = [s for s in self.df.columns.to_list() if s != self.target_feature]
 
         logging.info(f'Starting causal inference assessment with {n_workers} workers...')
         try:
             with ProcessPoolExecutor(max_workers=n_workers) as executor:
-                futures = [executor.submit(self._process_row, task, selected_columns, self.target_feature, single_ci) for
+                futures = [executor.submit(self._process_row, task, selected_columns, self.target_feature, single_ci)
+                           for
                            task in tasks]
                 if show_progress:
-                    for future in tqdm(as_completed(futures), total=len(futures), desc=f'Inferring causal knowledge...'):
+                    for future in tqdm(as_completed(futures), total=len(futures),
+                                       desc=f'Inferring causal knowledge...'):
                         target_value, pred_value = future.result()
                         res_score_dict[LABEL_target_value].append(target_value)
                         res_score_dict[LABEL_predicted_value].append(pred_value)
@@ -230,7 +234,8 @@ class CausalityInformativenessQuantification:
 
         return res_score_dict, causality_dict
 
-    def _process_chunk(self, chunk_df, selected_columns, target_feature, single_ci, progress_counter) -> Dict[str, List[float]]:
+    def _process_chunk(self, chunk_df, selected_columns, target_feature, single_ci, progress_counter) -> Dict[
+        str, List[float]]:
         chunk_res_score_dict = {LABEL_target_value: [], LABEL_predicted_value: []}
 
         for _, row in chunk_df.iterrows():

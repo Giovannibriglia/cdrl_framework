@@ -6,6 +6,7 @@ LABEL_dataframe_approximated = 'new_df'
 LABEL_target_value = 'target'
 LABEL_predicted_value = 'pred'
 
+LABEL_target_feature = 'target_feature'
 LABEL_dir_storing_dict_and_info = 'df_approx_and_info'
 LABEL_causal_graph = 'causal_graph'
 LABEL_bn_dict = 'bn_info'

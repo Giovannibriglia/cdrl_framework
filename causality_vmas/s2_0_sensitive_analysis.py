@@ -6,7 +6,7 @@ import psutil
 import logging
 
 from causality_vmas import abs_path_causality_vmas, LABEL_approximation_parameters, LABEL_dataframe_approximated, \
-    LABEL_ciq_results, LABEL_dir_storing_dict_and_info, LABEL_dict_causality
+    LABEL_ciq_results, LABEL_dir_storing_dict_and_info, LABEL_dict_causality, LABEL_target_feature
 from causality_vmas.s_2_1_causality_informativeness_quantification import CausalityInformativenessQuantification
 from causality_vmas.utils import my_approximation, save_file_incrementally, save_json_incrementally
 
@@ -68,9 +68,10 @@ logging.basicConfig(level=logging.INFO, format='%(processName)s - %(message)s')
 
 
 class SensitiveAnalysis:
-    def __init__(self, df: pd.DataFrame, task_name: str):
+    def __init__(self, df: pd.DataFrame, task_name: str, target_feature: str = 'agent_0_reward'):
         self.df_original = df
         self.task_name = task_name
+        self.target_feature = target_feature
         self.dir_save = f'./{LABEL_dir_storing_dict_and_info}_{self.task_name}'
         self.results = None
 
@@ -82,12 +83,14 @@ class SensitiveAnalysis:
 
     def _compute_and_save_single_ciq(self, single_dict_approx) -> Dict:
         approximation_dict = {k: v for k, v in single_dict_approx.items() if k != LABEL_dataframe_approximated}
+
         df_approx = single_dict_approx[LABEL_dataframe_approximated]
 
-        ciq = CausalityInformativenessQuantification(df_approx, 'reward')
+        ciq = CausalityInformativenessQuantification(df_approx, self.target_feature)
         res_ciq, res_causality = ciq.evaluate()
 
-        single_res = {LABEL_approximation_parameters: approximation_dict,
+        single_res = {LABEL_target_feature: self.target_feature,
+                      LABEL_approximation_parameters: approximation_dict,
                       LABEL_ciq_results: res_ciq,
                       LABEL_dict_causality: res_causality}
 
@@ -159,7 +162,7 @@ def main():
 
     df = pd.read_pickle(f'{GLOBAL_PATH_REPO}/causality_vmas/dataframes/{task_name}_mdp.pkl')
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
-    df = df.loc[:50001, agent0_columns]
+    df = df.loc[:100001, agent0_columns]
 
     sensitive_analysis = SensitiveAnalysis(df, task_name)
     results, path_results = sensitive_analysis.computing_CIQs()

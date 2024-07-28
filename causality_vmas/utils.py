@@ -391,6 +391,27 @@ def constraints_causal_graph(causal_graph: nx.DiGraph):
 
 " ******************************************************************************************************************** "
 
+
+def values_to_bins(values: List[float], intervals: List[float]) -> List[int]:
+    # Sort intervals to ensure they are in ascending order
+    intervals = sorted(intervals)
+
+    # Initialize the list to store the bin index for each value
+    new_values = []
+
+    # Iterate through each value and determine its bin
+    for value in values:
+        for i in range(len(intervals) - 1):
+            if intervals[i] <= value < intervals[i + 1]:
+                new_values.append(i)
+                break
+        # To handle the case where the value is exactly equal to the last interval's end
+        if value == intervals[-1]:
+            new_values.append(len(intervals) - 2)
+
+    return new_values
+
+
 """def _discretize_value(value, intervals):
     # Find the interval where the value fits
     for i in range(len(intervals) - 1):
