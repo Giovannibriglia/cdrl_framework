@@ -126,7 +126,7 @@ class CausalityInformativenessQuantification:
         return res_score, res_causal
 
     def cd_process(self):
-        logging.info('Causal discovery...')
+        logging.info('\nCausal discovery...')
         cd = CausalDiscovery(self.df)
         cd.training(cd_algo=self.cd_algo, show_progress=show_progress_cd)
         self.causal_graph = cd.return_causal_graph()
@@ -203,11 +203,11 @@ class CausalityInformativenessQuantification:
 
         selected_columns = [s for s in self.df.columns.to_list() if s != self.target_feature]
 
-        tasks = list(self.df.iterrows())[:1000]
+        tasks = list(self.df.iterrows())
 
         total_cpus = os.cpu_count()
         cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = min(5, int(total_cpus/2 * (1 - cpu_usage / 100)))
+        free_cpus = min(10, int(total_cpus/2 * (1 - cpu_usage / 100)))
         n_workers = max(1, free_cpus)  # Ensure at least one worker is used
 
         logging.info(f'Starting causal inference assessment with {n_workers} workers...')

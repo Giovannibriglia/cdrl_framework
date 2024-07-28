@@ -491,11 +491,11 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
 
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
     df = df.loc[:, agent0_columns]
-    # TODO: chiedo a stefano cosa ne pensa: è ok 10 oppure mettiamo n_bins?
+    # TODO: chiedi a stefano cosa ne pensa: è ok 10 oppure mettiamo n_bins?
     not_discretize = [s for s in df.columns.to_list() if len(df[s].unique()) <= 10]
     new_df = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize)
     new_df = group_variables(new_df, 'sensor', n_sensors)
-    new_df = new_df.sample(n_rows-1, random_state=42)  # new_df.loc[:n_rows - 1, :]
+    new_df = new_df.loc[:n_rows - 1, :] # new_df.sample(n_rows-1, random_state=42)
 
     for col in new_df.columns.to_list():
         if len(new_df[col].unique()) > n_bins and 'kind' not in col:

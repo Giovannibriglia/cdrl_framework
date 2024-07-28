@@ -159,7 +159,7 @@ def main():
 
     df = pd.read_pickle(f'{GLOBAL_PATH_REPO}/causality_vmas/dataframes/{task_name}_mdp.pkl')
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
-    df = df.loc[:200001, agent0_columns]
+    df = df.loc[:50001, agent0_columns]
 
     sensitive_analysis = SensitiveAnalysis(df, task_name)
     results, path_results = sensitive_analysis.computing_CIQs()
