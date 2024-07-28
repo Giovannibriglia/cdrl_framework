@@ -17,8 +17,8 @@ LABEL_value_group_var = 'value'
 
 LABEL_reward_action_values = 'reward_action_values'
 
-LABEL_binary_metrics = 'binary_metrics'
-LABEL_distance_metrics = 'distance_metrics'
+LABEL_binary_metrics = 'binary'
+LABEL_distance_metrics = 'distance'
 
 LABEL_scores_distance = 'res_score_dist'
 LABEL_scores_binary = 'res_score_binary'

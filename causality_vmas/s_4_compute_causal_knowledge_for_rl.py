@@ -74,8 +74,8 @@ class OfflineCausalInferenceForRL:
 
     def create_causal_table(self, show_progress: bool = False) -> pd.DataFrame:
         rows_causal_table = []
-        print('only 1000 rows')
-        self.df = self.df.loc[:1000, :]
+        """print('only 1000 rows')
+        self.df = self.df.loc[:1000, :]"""
 
         selected_columns = [s for s in self.df.columns.to_list() if
                             s != self.reward_variable and s != self.action_variable]
@@ -98,11 +98,11 @@ class OfflineCausalInferenceForRL:
 
 
 if __name__ == '__main__':
-    path_file = './df_approx_and_info_navigation'
+    path_file = './df_approx_and_info_navigation/best'
 
-    dataframe = pd.read_pickle(f'{path_file}/df_4.pkl')
+    dataframe = pd.read_pickle(f'{path_file}/best_df.pkl')
 
-    file_info_json = f'{path_file}/info_4.json'
+    file_info_json = f'{path_file}/best_info.json'
 
     with open(file_info_json, 'r') as file:
         all_info = json.load(file)
@@ -113,4 +113,5 @@ if __name__ == '__main__':
 
     offline_ci = OfflineCausalInferenceForRL(dataframe, graph, bn_dict)
     ct = offline_ci.create_causal_table(show_progress=True)
+    ct.to_pickle(f'{path_file}/causal_table.pkl')
     ct.to_excel('mario.xlsx')
