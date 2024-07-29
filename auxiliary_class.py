@@ -38,6 +38,7 @@ class CausalityDrivenActionSpaceFilter:
             raise NotImplementedError('have no previous knowledge is not still implemented')
 
     def action_space_filter(self, obs: Dict):
+        # TODO: rescale obs if is not in the bayesian network?
         reward_action_values = self._get_reward_action_values(obs)
         action_reward_scores = self.weighted_action_filter(reward_action_values)
         actions_to_discard = self.select_actions_to_remove(action_reward_scores)
@@ -75,14 +76,14 @@ class CausalityDrivenActionSpaceFilter:
                 if action not in averaged_mean_dict:
                     averaged_mean_dict[action] = 0
 
-                # Here we assume that the reward_value is the key and we are calculating weighted sum
+                # Here we assume that the reward_value is the key, and we are calculating a weighted sum
                 reward_value = float(action)
                 averaged_mean_dict[action] += prob * rescale_reward(reward_value, old_min, old_max)
 
         # Averaging the summed rewards based on the number of reward entries
         num_reward_entries = len(input_dict)
         for action in averaged_mean_dict:
-            averaged_mean_dict[action] = round(averaged_mean_dict[action] / num_reward_entries, 3)
+            averaged_mean_dict[action] = round(averaged_mean_dict[action] / num_reward_entries, 4)
 
         return averaged_mean_dict
 
@@ -93,3 +94,75 @@ class CausalityDrivenActionSpaceFilter:
         percentile_25 = np.percentile(values, 25)
 
         return [key for key, value in action_reward_scores if value <= percentile_25]
+
+
+class DynamicActionSpace(spaces.Space):
+    def __init__(self, original_space):
+        assert isinstance(original_space, (spaces.Discrete, spaces.Box)), "Original space must be Discrete or Box"
+
+        self.original_space = original_space
+        self.invalid_values = []
+        self.invalid_intervals = []
+
+        if isinstance(original_space, spaces.Discrete):
+            self.valid_values = list(range(original_space.n))
+            self.n = len(self.valid_values)
+        elif isinstance(original_space, spaces.Box):
+            self.low = original_space.low
+            self.high = original_space.high
+
+        super().__init__(original_space.shape, original_space.dtype)
+
+    def sample(self):
+        if isinstance(self.original_space, spaces.Discrete):
+            return np.random.choice(self.valid_values)
+        elif isinstance(self.original_space, spaces.Box):
+            while True:
+                sample = self.original_space.sample()
+                if self._is_valid(sample):
+                    return sample
+
+    def contains(self, x):
+        if isinstance(self.original_space, spaces.Discrete):
+            return x in self.valid_values
+        elif isinstance(self.original_space, spaces.Box):
+            return self._is_valid(x)
+
+    def _is_valid(self, x):
+        for interval in self.invalid_intervals:
+            if np.all(x >= interval[0]) and np.all(x <= interval[1]):
+                return False
+        return True
+
+    def update_constraints(self, to_constraint: List[int] | List[Tuple] = None):
+        if isinstance(self.original_space, spaces.Discrete):
+            if to_constraint is not None:
+                self.invalid_values = to_constraint
+                self.valid_values = [i for i in range(self.original_space.n) if i not in self.invalid_values]
+                self.n = len(self.valid_values)
+        elif isinstance(self.original_space, spaces.Box):
+            if to_constraint is not None:
+                self.invalid_intervals = to_constraint
+        else:
+            raise NotImplementedError()
+
+    def reset_constraints(self):
+        self.invalid_values = []
+        self.invalid_intervals = []
+
+        if isinstance(self.original_space, spaces.Discrete):
+            self.valid_values = list(range(self.original_space.n))
+            self.n = len(self.valid_values)
+
+    def __repr__(self):
+        if isinstance(self.original_space, spaces.Discrete):
+            return f"DynamicDiscrete({self.valid_values})"
+        elif isinstance(self.original_space, spaces.Box):
+            return f"DynamicBox({self.low}, {self.high}, {self.invalid_intervals})"
+
+    def to_jsonable(self, sample_n):
+        return [int(x) for x in sample_n] if isinstance(self.original_space, spaces.Discrete) else [x.tolist() for x in
+                                                                                                    sample_n]
+    @staticmethod
+    def from_jsonable(sample_n):
+        return np.array(sample_n)

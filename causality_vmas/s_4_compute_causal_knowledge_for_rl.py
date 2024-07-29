@@ -98,7 +98,7 @@ class OfflineCausalInferenceForRL:
 
 
 if __name__ == '__main__':
-    path_file = './df_approx_and_info_navigation/best'
+    path_file = 'df_approx_and_info_navigation_too_big/best'
 
     dataframe = pd.read_pickle(f'{path_file}/best_df.pkl')
 

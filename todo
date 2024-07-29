@@ -1,10 +1,8 @@
 # TODO:
-    - setup better discretization: based on dataframe
-    - finish casual inference for RL setup --> quartili-based filter
-    - evaluate results of the sensitive analysis #bins
-        - try to extract markov blanket and the equivalence class
+    -
     - launch big simulations: causal iql vs iql benchmarl vs ippo benchmarl
     - try to use other environments: transport, sampling...
+    - be sure of env and task generalization of the code
 
 
 source MyEnv/bin/activate
