@@ -3,8 +3,8 @@ import json
 
 from causality_vmas import LABEL_dict_causality, LABEL_bn_dict, LABEL_causal_graph
 from causality_vmas.s2_0_sensitive_analysis import SensitiveAnalysis
-from causality_vmas.s_3_find_best_approximation import BestApprox
-from causality_vmas.s_4_compute_causal_knowledge_for_rl import OfflineCausalInferenceForRL
+from causality_vmas.s3_0_find_best_approximation import BestApprox
+from causality_vmas.s4_0_compute_causal_knowledge_for_rl import OfflineCausalInferenceForRL
 from causality_vmas.utils import list_to_graph
 from path_repo import GLOBAL_PATH_REPO
 

@@ -21,6 +21,9 @@ from causalnex.structure import StructureModel
 from matplotlib import pyplot as plt
 from pgmpy.factors.discrete import TabularCPD
 from pgmpy.models import BayesianNetwork
+from sklearn.preprocessing import StandardScaler
+from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
+from scipy.spatial.distance import squareform
 
 from causality_vmas import LABEL_kind_group_var, LABEL_value_group_var
 from path_repo import GLOBAL_PATH_REPO
@@ -530,7 +533,7 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
 
 
 def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
-    with open(f'{GLOBAL_PATH_REPO}/causality_vmas/s2_0_params_approximations.yaml', 'r') as file:
+    with open(f'./s2_0_params_sensitive_analysis.yaml', 'r') as file:
         config_approximation = yaml.safe_load(file)
 
         approx_params_task = config_approximation[task_name]
@@ -656,3 +659,98 @@ def dict_to_bn(model_data):
 
 def split_dataframe(df: pd.DataFrame, num_splits: int) -> List:
     return [df.iloc[i::num_splits, :] for i in range(num_splits)]
+
+
+" ******************************************************************************************************************** "
+
+
+def group_features_by_distribution(df, auto_threshold=True, threshold=None):
+    """
+    Groups features with similar distributions in a dataframe.
+
+    Parameters:
+    - df: pandas.DataFrame
+        The input dataframe containing the features to be grouped.
+    - auto_threshold: bool (default=True)
+        Whether to automatically determine the threshold for clustering.
+    - threshold: float (default=None)
+        The threshold for the clustering algorithm to determine the number of clusters. Ignored if auto_threshold is True.
+
+    Returns:
+    - feature_clusters: dict
+        A dictionary mapping each feature to a cluster.
+    """
+
+    # Step 1: Standardize the Data
+    scaler = StandardScaler()
+    scaled_df = scaler.fit_transform(df)
+    scaled_df = pd.DataFrame(scaled_df, columns=df.columns)
+
+    # Step 2: Measure Similarity
+    correlation_matrix = scaled_df.corr().abs()
+
+    # Handle NaN values in the correlation matrix
+    correlation_matrix = correlation_matrix.fillna(0)
+
+    # Step 3: Cluster Features
+    distance_matrix = 1 - correlation_matrix
+
+    # Ensure the distance matrix is symmetric
+    distance_matrix = (distance_matrix + distance_matrix.T) / 2
+
+    # Set diagonal elements to zero
+    np.fill_diagonal(distance_matrix.values, 0)
+
+    # Check if the distance matrix is symmetric
+    if not np.allclose(distance_matrix, distance_matrix.T, atol=1e-8):
+        print("Distance matrix:\n", distance_matrix)
+        print("Transpose of distance matrix:\n", distance_matrix.T)
+        raise ValueError("Distance matrix is not symmetric")
+
+    linked = linkage(squareform(distance_matrix), 'ward')
+
+    if auto_threshold:
+        # Create dendrogram and determine the threshold automatically
+        dendro = dendrogram(linked, no_plot=True)
+        distances = dendro['dcoord']
+        distances = sorted([y for x in distances for y in x[1:3]], reverse=True)
+        diff = np.diff(distances)
+        threshold = distances[np.argmax(diff) + 1]
+
+    # Plot the dendrogram
+    plt.figure(figsize=(10, 7), dpi=1000)
+    sns.clustermap(correlation_matrix, row_linkage=linked, col_linkage=linked, cmap='coolwarm', annot=True)
+    plt.title('Hierarchical Clustering Dendrogram')
+    plt.show()
+
+    # Define clusters
+    clusters = fcluster(linked, t=threshold, criterion='distance')
+
+    # Map features to clusters
+    feature_clusters = {df.columns[i]: clusters[i] for i in range(len(df.columns))}
+
+    return feature_clusters
+
+
+def plot_distributions(df):
+    """
+    Plots the distribution of each variable in the dataframe.
+
+    Parameters:
+    - df: pandas.DataFrame
+        The input dataframe containing the variables to be plotted.
+    """
+    num_columns = len(df.columns)
+    num_rows = (num_columns + 2) // 3  # Adjust rows for a better fit
+
+    plt.figure(figsize=(15, num_rows * 5))
+
+    for i, column in enumerate(df.columns, 1):
+        plt.subplot(num_rows, 3, i)
+        sns.histplot(df[column], kde=True)
+        plt.title(f'Distribution of {column}')
+        plt.xlabel(column)
+        plt.ylabel('Frequency')
+
+    plt.tight_layout()
+    plt.show()

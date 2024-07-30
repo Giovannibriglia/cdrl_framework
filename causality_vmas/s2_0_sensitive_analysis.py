@@ -7,7 +7,7 @@ import logging
 
 from causality_vmas import abs_path_causality_vmas, LABEL_approximation_parameters, LABEL_dataframe_approximated, \
     LABEL_ciq_results, LABEL_dir_storing_dict_and_info, LABEL_dict_causality, LABEL_target_feature
-from causality_vmas.s_2_1_causality_informativeness_quantification import CausalityInformativenessQuantification
+from causality_vmas.s2_1_causality_informativeness_quantification import CausalityInformativenessQuantification
 from causality_vmas.utils import my_approximation, save_file_incrementally, save_json_incrementally
 
 from path_repo import GLOBAL_PATH_REPO
