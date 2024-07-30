@@ -1,6 +1,6 @@
 import os
 import time
-from typing import Dict
+from typing import Dict, Tuple
 import importlib
 from torch import Tensor
 from tqdm import tqdm
@@ -167,7 +167,7 @@ class VMASExperiment:
 
         self.list_story.append(dict_row)
 
-    def run_experiment(self, if_save: bool = True):
+    def run_experiment(self) -> Tuple[pd.DataFrame, str]:
         frame_list = [] if self.render and self.save_render else None
 
         init_time = time.time()
@@ -198,8 +198,9 @@ class VMASExperiment:
         if self.render and self.save_render:
             save_video(self.scenario_name, frame_list, fps=1 / self.env.scenario.world.dt)
 
-        if if_save:
-            self._store_results()
+        self._store_results()
+
+        return self.df_story, self.dir_save
 
     def _store_results(self):
         add = 'mdp' if self.mdp else 'pomdp'
@@ -216,7 +217,7 @@ class VMASExperiment:
 
 def main(scenario_name: str):
     experiment = VMASExperiment(scenario_name)
-    experiment.run_experiment()
+    df, path_res = experiment.run_experiment()
 
 
 if __name__ == "__main__":

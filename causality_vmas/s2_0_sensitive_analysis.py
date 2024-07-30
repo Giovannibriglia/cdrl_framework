@@ -5,7 +5,7 @@ import logging
 from causality_vmas import LABEL_approximation_parameters, LABEL_dataframe_approximated, \
     LABEL_ciq_scores, LABEL_dir_storing_dict_and_info, LABEL_discrete_intervals, LABEL_target_feature_analysis
 from causality_vmas.s2_1_causality_informativeness_quantification import CausalityInformativenessQuantification
-from causality_vmas.utils import my_approximation, save_file_incrementally, save_json_incrementally
+from causality_vmas.utils import my_approximation, save_file_incrementally, save_json_incrementally, graph_to_list
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(processName)s - %(message)s')
@@ -31,22 +31,26 @@ class SensitiveAnalysis:
         discrete_intervals = single_dict_approx[LABEL_discrete_intervals]
 
         ciq = CausalityInformativenessQuantification(df_approx, self.target_feature)
-        dict_scores, dict_causal_graph, dict_bn_info = ciq.evaluate()
+        dict_scores, causal_graph, dict_bn_info = ciq.evaluate()
 
-        save_file_incrementally(df_approx, self.dir_save, 'df_', 'pkl')
+        if not (dict_scores is None or causal_graph is None or dict_bn_info is None):
+            save_file_incrementally(df_approx, self.dir_save, 'df_', 'pkl')
 
-        save_json_incrementally(dict_causal_graph, self.dir_save, "causal_graph_")
-        save_json_incrementally(dict_bn_info, self.dir_save, "bn_params")
-        save_json_incrementally(params_approximation, self.dir_save, "approx_params_")
+            list_causal_graph = graph_to_list(causal_graph)
+            save_json_incrementally(list_causal_graph, self.dir_save, "causal_graph_")
+            save_json_incrementally(dict_bn_info, self.dir_save, "bn_params_")
+            save_json_incrementally(params_approximation, self.dir_save, "approx_params_")
 
-        others = {LABEL_discrete_intervals: discrete_intervals}
-        save_json_incrementally(others, self.dir_save, 'others')
+            others = {LABEL_discrete_intervals: discrete_intervals}
+            save_json_incrementally(others, self.dir_save, 'others_')
 
-        dict_scores_evaluation = {LABEL_target_feature_analysis: self.target_feature,
-                                  LABEL_ciq_scores: dict_scores}
-        save_json_incrementally(dict_scores_evaluation, self.dir_save, 'scores_')
+            dict_scores_evaluation = {LABEL_target_feature_analysis: self.target_feature,
+                                      LABEL_ciq_scores: dict_scores}
+            save_json_incrementally(dict_scores_evaluation, self.dir_save, 'scores_')
 
-        logging.info(f'Results computed and saved for {params_approximation} approximation')
+            logging.info(f'Results computed and saved for {params_approximation} approximation')
+        else:
+            logging.error(f'No best found')
 
     """def computing_CIQs(self) -> Tuple[List[Dict], str]:
         MEMORY_USAGE = 0.5

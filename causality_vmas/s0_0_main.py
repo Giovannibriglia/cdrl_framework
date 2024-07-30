@@ -1,35 +1,47 @@
 import pandas as pd
 import json
 
-from causality_vmas import LABEL_dict_causality, LABEL_bn_dict, LABEL_causal_graph
+from causality_vmas import LABEL_bn_dict, LABEL_causal_graph
+from causality_vmas.s1_0_extract_df_task_vmas import VMASExperiment
 from causality_vmas.s2_0_sensitive_analysis import SensitiveAnalysis
 from causality_vmas.s3_0_find_best_approximation import BestApprox
 from causality_vmas.s4_0_compute_causal_knowledge_for_rl import OfflineCausalInferenceForRL
-from causality_vmas.utils import list_to_graph
-from path_repo import GLOBAL_PATH_REPO
+from causality_vmas.utils import list_to_graph, is_folder_empty
 
 
 def main(task_name: str = 'navigation'):
-    # TODO: obtain df
-    df = pd.read_pickle(f'{GLOBAL_PATH_REPO}/causality_vmas/dataframes/{task_name}_mdp.pkl')
+    experiment = VMASExperiment(task_name)
+    df, _ = experiment.run_experiment()
+
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
-    df = df.loc[:100001, agent0_columns]
+    df = df.loc[:, agent0_columns]
 
     sensitive_analysis = SensitiveAnalysis(df, task_name)
-    results, path_results = sensitive_analysis.computing_CIQs()
+    path_results = sensitive_analysis.computing_CIQs()
 
     best_approx = BestApprox(path_results)
-    best_approx.evaluate(True)
-    best_df, best_info = best_approx.get_best()
-    best_approx.plot_results()
+    best_approx.evaluate()
+    best_approx.plot_results(if_save=True)
 
-    graph_list = best_info[LABEL_dict_causality][LABEL_causal_graph]
-    graph = list_to_graph(graph_list)
-    bn_dict = best_info[LABEL_dict_causality][LABEL_bn_dict]
+    path_file = f'{path_results}/best'
 
-    offline_ci = OfflineCausalInferenceForRL(best_df, graph, bn_dict)
-    ct = offline_ci.create_causal_table(show_progress=True)
-    print(ct)
+    if not is_folder_empty(path_file):
+        dataframe = pd.read_pickle(f'{path_file}/best_df.pkl')
+
+        with open(f'{path_file}/best_causal_graph.json', 'r') as file:
+            graph_list = json.load(file)[LABEL_causal_graph]
+        causal_graph = list_to_graph(graph_list)
+
+        with open(f'{path_file}/best_bn_params.json', 'r') as file:
+            bn_dict = json.load(file)[LABEL_bn_dict]
+
+        if (dataframe is not None and causal_graph is not None) or bn_dict is not None:
+            offline_ci = OfflineCausalInferenceForRL(dataframe, causal_graph, bn_dict)
+            ct = offline_ci.create_causal_table(show_progress=True)
+            ct.to_pickle(f'{path_file}/causal_table.pkl')
+            ct.to_excel('mario.xlsx')
+    else:
+        print('there are no best')
 
 
 if __name__ == '__main__':

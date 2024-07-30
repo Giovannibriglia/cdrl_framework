@@ -517,7 +517,8 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
                 f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
 
     approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rays': n_rays, 'n_rows': n_rows},
-                   LABEL_discrete_intervals: discrete_intervals, LABEL_dataframe_approximated: new_df}
+                   LABEL_discrete_intervals: discrete_intervals,
+                   LABEL_dataframe_approximated: new_df}
     return approx_dict
 
 
@@ -548,13 +549,16 @@ def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
 
 def _get_next_index(folder_path, prefix):
     existing_files = os.listdir(folder_path)
+
     indices = []
+
     for filename in existing_files:
         if filename.startswith(prefix):
             idx_str = filename[len(prefix):].split('.')[0]
             if idx_str.isdigit():
                 indices.append(int(idx_str))
-    return max(indices) + 1 if indices else 1
+
+    return max(indices) + 1 if indices else 0
 
 
 def save_file_incrementally(file_content, folder_path, prefix, extension, is_binary=False):
@@ -581,12 +585,21 @@ def save_json_incrementally(data, folder_path, prefix):
 
     next_index = _get_next_index(folder_path, prefix)
     file_path = os.path.join(folder_path, f'{prefix}{next_index}.json')
-
     with open(file_path, 'w') as f:
         json.dump(data, f, indent=8)
 
     # print(f'Saved JSON to {file_path}')
 
+" ******************************************************************************************************************** "
+def is_folder_empty(folder_path):
+    # Get the list of files and directories in the specified folder
+    contents = os.listdir(folder_path)
+
+    # Check if the list is empty
+    if not contents:
+        return True
+    else:
+        return False
 
 " ******************************************************************************************************************** "
 
@@ -741,3 +754,9 @@ def plot_distributions(df):
 
     plt.tight_layout()
     plt.show()
+
+
+def get_numeric_part(input_string: str) -> int:
+    numeric_part = re.findall(r'\d+', input_string)
+    out_number = int(numeric_part[0]) if numeric_part else None
+    return out_number

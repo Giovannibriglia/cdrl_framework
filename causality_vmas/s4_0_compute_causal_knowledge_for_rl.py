@@ -6,7 +6,8 @@ from tqdm import tqdm
 import json
 
 from causality_algos import SingleCausalInference
-from causality_vmas import LABEL_bn_dict, LABEL_reward_action_values, LABEL_dict_causality, LABEL_causal_graph
+from causality_vmas import LABEL_bn_dict, LABEL_reward_action_values, LABEL_causal_graph, \
+    LABEL_dir_storing_dict_and_info
 from causality_vmas.utils import list_to_graph
 
 
@@ -97,21 +98,23 @@ class OfflineCausalInferenceForRL:
         return causal_table
 
 
-if __name__ == '__main__':
-    path_file = 'df_approx_and_info_navigation_too_big/best'
+def main(task: str = 'navigation'):
+    path_file = f'{LABEL_dir_storing_dict_and_info}_{task}/best'
 
     dataframe = pd.read_pickle(f'{path_file}/best_df.pkl')
 
-    file_info_json = f'{path_file}/best_info.json'
-
-    with open(file_info_json, 'r') as file:
-        all_info = json.load(file)
-
-    graph_list = all_info[LABEL_dict_causality][LABEL_causal_graph]
+    with open(f'{path_file}/best_causal_graph.json', 'r') as file:
+        graph_list = json.load(file)[LABEL_causal_graph]
     graph = list_to_graph(graph_list)
-    bn_dict = all_info[LABEL_dict_causality][LABEL_bn_dict]
+
+    with open(f'{path_file}/best_bn_params.json', 'r') as file:
+        bn_dict = json.load(file)[LABEL_bn_dict]
 
     offline_ci = OfflineCausalInferenceForRL(dataframe, graph, bn_dict)
     ct = offline_ci.create_causal_table(show_progress=True)
     ct.to_pickle(f'{path_file}/causal_table.pkl')
     ct.to_excel('mario.xlsx')
+
+
+if __name__ == '__main__':
+    main()
