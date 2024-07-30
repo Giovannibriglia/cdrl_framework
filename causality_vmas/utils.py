@@ -25,7 +25,8 @@ from sklearn.preprocessing import StandardScaler
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from scipy.spatial.distance import squareform
 
-from causality_vmas import LABEL_kind_group_var, LABEL_value_group_var
+from causality_vmas import LABEL_kind_group_var, LABEL_value_group_var, LABEL_approximation_parameters, \
+    LABEL_dataframe_approximated, LABEL_discrete_intervals
 from path_repo import GLOBAL_PATH_REPO
 
 " ******************************************************************************************************************** "
@@ -374,16 +375,16 @@ def constraints_causal_graph(causal_graph: nx.DiGraph):
     # print("Removed sensor edges:", [s for s in edges_to_remove_sensor if s not in causal_graph.edges()])
 
     edges_to_remove_sensor = [(u, v) for u, v in causal_graph.edges() if
-                              ('V' in u and 'D' in v) or
-                              ('D' in u and 'V' in v)]
+                              ('Vel' in u and 'Dist' in v) or
+                              ('Dist' in u and 'Vel' in v)]
     causal_graph.remove_edges_from(edges_to_remove_sensor)
     # print("Removed sensor edges:", [s for s in edges_to_remove_sensor if s not in causal_graph.edges()])
 
     edges_to_remove_sensor = [(u, v) for u, v in causal_graph.edges() if
-                              (LABEL_value_group_var in u and 'D' in v) or
-                              ('D' in u and LABEL_value_group_var in v) or
-                              (LABEL_kind_group_var in u and 'D' in v) or
-                              ('D' in u and LABEL_kind_group_var in v)]
+                              (LABEL_value_group_var in u and 'Dist' in v) or
+                              ('Dist' in u and LABEL_value_group_var in v) or
+                              (LABEL_kind_group_var in u and 'Dist' in v) or
+                              ('Dist' in u and LABEL_kind_group_var in v)]
     causal_graph.remove_edges_from(edges_to_remove_sensor)
     # print("Removed sensor edges:", [s for s in edges_to_remove_sensor if s not in causal_graph.edges()])
 
@@ -413,18 +414,6 @@ def values_to_bins(values: List[float], intervals: List[float]) -> List[int]:
             new_values.append(len(intervals) - 2)
 
     return new_values
-
-
-"""def _discretize_value(value, intervals):
-    # Find the interval where the value fits
-    for i in range(len(intervals) - 1):
-        if intervals[i] <= value < intervals[i + 1]:
-            return (intervals[i] + intervals[i + 1]) / 2
-    # Handle the edge cases
-    if value < intervals[0]:
-        return intervals[0]
-    elif value >= intervals[-1]:
-        return intervals[-1]"""
 
 
 def _discretize_value(value, intervals):
@@ -511,7 +500,7 @@ def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1)
 def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
     df, params = input_elements
     n_bins = params.get('BINS', 20)
-    n_sensors = params.get('SENSORS', 1)
+    n_rays = params.get('RAYS', 1)
     n_rows = params.get('ROWS', int(len(df) / 2))
 
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
@@ -519,7 +508,7 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
     # TODO: chiedi a stefano cosa ne pensa: è ok 10 oppure mettiamo n_bins?
     not_discretize = [s for s in df.columns.to_list() if len(df[s].unique()) <= 10]
     new_df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize)
-    new_df = group_variables(new_df, 'sensor', n_sensors)
+    new_df = group_variables(new_df, 'ray', n_rays)
     new_df = new_df.loc[:n_rows - 1, :]  # new_df.sample(n_rows-1, random_state=42)
 
     for col in new_df.columns.to_list():
@@ -527,8 +516,8 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
             print(
                 f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
 
-    approx_dict = {'new_df': new_df, 'n_bins': n_bins, 'n_sensors': n_sensors, 'n_rows': n_rows,
-                   'discrete_intervals': discrete_intervals}
+    approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rays': n_rays, 'n_rows': n_rows},
+                   LABEL_discrete_intervals: discrete_intervals, LABEL_dataframe_approximated: new_df}
     return approx_dict
 
 
@@ -569,8 +558,7 @@ def _get_next_index(folder_path, prefix):
 
 
 def save_file_incrementally(file_content, folder_path, prefix, extension, is_binary=False):
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
+    os.makedirs(folder_path, exist_ok=True)
 
     next_index = _get_next_index(folder_path, prefix)
     file_path = os.path.join(folder_path, f'{prefix}{next_index}.{extension}')
@@ -589,8 +577,7 @@ def save_file_incrementally(file_content, folder_path, prefix, extension, is_bin
 
 
 def save_json_incrementally(data, folder_path, prefix):
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
+    os.makedirs(folder_path, exist_ok=True)
 
     next_index = _get_next_index(folder_path, prefix)
     file_path = os.path.join(folder_path, f'{prefix}{next_index}.json')

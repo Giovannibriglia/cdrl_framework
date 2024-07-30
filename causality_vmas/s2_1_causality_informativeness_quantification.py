@@ -10,7 +10,7 @@ import logging
 from causality_vmas.causality_algos import CausalDiscovery, SingleCausalInference
 from causality_vmas.utils import get_df_boundaries, constraints_causal_graph, bn_to_dict, \
     graph_to_list, _navigation_approximation, split_dataframe
-from causality_vmas import abs_path_causality_vmas, LABEL_causal_graph, LABEL_bn_dict, LABEL_target_value, \
+from causality_vmas import LABEL_causal_graph, LABEL_bn_dict, LABEL_target_value, \
     LABEL_predicted_value
 
 show_progress_cd = False
@@ -40,10 +40,10 @@ class CausalityInformativenessQuantification:
         else:
             raise ValueError('Target feature is not correct')
 
-    def evaluate(self) -> Tuple[Dict, Dict]:
+    def evaluate(self) -> Tuple[Dict, Dict, Dict]:
         self.cd_process()
-        res_score, res_causal = self.ci_assessment(show_progress=True)
-        return res_score, res_causal
+        dict_scores, causal_graph, bn_info = self.ci_assessment(show_progress=True)
+        return dict_scores, causal_graph, bn_info
 
     def cd_process(self):
         logging.info('Causal discovery...')
@@ -107,21 +107,22 @@ class CausalityInformativenessQuantification:
         logging.info('Causal Inference assessment completed')
         return res_score_dict, causality_dict"""
 
-    def ci_assessment(self, show_progress: bool = False) -> Tuple[Dict, Dict]:
-        res_score_dict = {LABEL_target_value: [], LABEL_predicted_value: []}
-        causality_dict = {LABEL_causal_graph: graph_to_list(self.causal_graph)}
+    def ci_assessment(self, show_progress: bool = False) -> Tuple[Dict, Dict, Dict]:
+        dict_scores = {LABEL_target_value: [], LABEL_predicted_value: []}
+        causal_graph = {LABEL_causal_graph: graph_to_list(self.causal_graph)}
+        bn_info = {LABEL_bn_dict: {}}
 
         logging.info(f'Setting up causal bayesian network...')
         try:
             single_ci = SingleCausalInference(self.df, self.causal_graph)
         except Exception as e:
             logging.error(f'Error in causal bayesian network definition: {e}')
-            return res_score_dict, causality_dict
+            return dict_scores, causal_graph, bn_info
 
         cbn = single_ci.return_cbn()
         cbn_in_dict = bn_to_dict(cbn)
 
-        causality_dict[LABEL_bn_dict] = cbn_in_dict
+        bn_info[LABEL_bn_dict] = cbn_in_dict
 
         tasks = list(self.df.iterrows())
 
@@ -142,17 +143,17 @@ class CausalityInformativenessQuantification:
                     for future in tqdm(as_completed(futures), total=len(futures),
                                        desc=f'Inferring causal knowledge...'):
                         target_value, pred_value = future.result()
-                        res_score_dict[LABEL_target_value].append(target_value)
-                        res_score_dict[LABEL_predicted_value].append(pred_value)
+                        dict_scores[LABEL_target_value].append(target_value)
+                        dict_scores[LABEL_predicted_value].append(pred_value)
                 else:
                     for future in as_completed(futures):
                         target_value, pred_value = future.result()
-                        res_score_dict[LABEL_target_value].append(target_value)
-                        res_score_dict[LABEL_predicted_value].append(pred_value)
+                        dict_scores[LABEL_target_value].append(target_value)
+                        dict_scores[LABEL_predicted_value].append(pred_value)
         except Exception as e:
             logging.info(f'Causal inference assessment failed: {e}')
 
-        return res_score_dict, causality_dict
+        return dict_scores, causal_graph, bn_info
 
     def _process_chunk(self, chunk_df, selected_columns, target_feature, single_ci, progress_counter) -> Dict[
         str, List[float]]:
@@ -180,10 +181,10 @@ class CausalityInformativenessQuantification:
 
 
 if __name__ == '__main__':
-    df = pd.read_pickle(f'{abs_path_causality_vmas}/causality_vmas/dataframes/navigation_mdp.pkl')
+    df = pd.read_pickle(f'./dataframes/df_navigation_pomdp_discrete_actions_1.pkl')
 
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
-    df = df.loc[:20001, agent0_columns]
+    df = df.loc[:100001, agent0_columns]
     dict_approx = _navigation_approximation((df, {'BINS': 100, 'SENSORS': 4, 'ROWS': 20000}))
     df = dict_approx['new_df']
     # get_df_boundaries(df)

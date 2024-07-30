@@ -1,16 +1,15 @@
-abs_path_causality_vmas = '..'
 
+LABEL_target_feature_analysis = 'target_feature'
 LABEL_approximation_parameters = 'approx_params'
-LABEL_ciq_results = 'scores'
+LABEL_ciq_scores = 'scores'
 LABEL_dataframe_approximated = 'new_df'
+LABEL_discrete_intervals = 'discrete_intervals'
 LABEL_target_value = 'target'
 LABEL_predicted_value = 'pred'
 
-LABEL_target_feature = 'target_feature'
 LABEL_dir_storing_dict_and_info = 'df_approx_and_info'
 LABEL_causal_graph = 'causal_graph'
 LABEL_bn_dict = 'bn_info'
-LABEL_dict_causality = 'causality'
 
 LABEL_kind_group_var = 'kind'
 LABEL_value_group_var = 'value'

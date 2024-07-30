@@ -10,9 +10,9 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import seaborn as sns
 import re
 
-from causality_vmas import LABEL_ciq_results, LABEL_scores_binary, LABEL_scores_distance, \
+from causality_vmas import LABEL_ciq_scores, LABEL_scores_binary, LABEL_scores_distance, \
     LABEL_approximation_parameters, LABEL_binary_metrics, LABEL_distance_metrics, LABEL_target_value, \
-    LABEL_predicted_value, LABEL_target_feature
+    LABEL_predicted_value, LABEL_target_feature_analysis
 from causality_vmas.utils import values_to_bins
 
 
@@ -84,10 +84,10 @@ class BestApprox:
 
         for name_result, result in tqdm(self.all_results.items(), desc="Processing Results..."):
             params_info = result[LABEL_approximation_parameters]
-            target_feature = result[LABEL_target_feature]
+            target_feature = result[LABEL_target_feature_analysis]
             intervals = params_info['discrete_intervals'][target_feature]
             max_distance_error = len(intervals)
-            scores = result[LABEL_ciq_results]
+            scores = result[LABEL_ciq_scores]
 
             target_values = scores[LABEL_target_value]
             pred_values = scores[LABEL_predicted_value]

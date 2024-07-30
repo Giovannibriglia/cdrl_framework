@@ -12,7 +12,6 @@ from causality_vmas.utils import save_file_incrementally, save_json_incrementall
 
 from vmas import make_env
 from vmas.simulator.utils import save_video
-
 from vmas.simulator.heuristic_policy import RandomPolicy, BaseHeuristicPolicy
 
 

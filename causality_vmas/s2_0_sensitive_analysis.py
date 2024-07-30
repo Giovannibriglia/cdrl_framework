@@ -1,16 +1,11 @@
-import gc
-from typing import List, Dict, Tuple
+from typing import List, Dict
 import pandas as pd
-import multiprocessing
-import psutil
 import logging
 
-from causality_vmas import abs_path_causality_vmas, LABEL_approximation_parameters, LABEL_dataframe_approximated, \
-    LABEL_ciq_results, LABEL_dir_storing_dict_and_info, LABEL_dict_causality, LABEL_target_feature
+from causality_vmas import LABEL_approximation_parameters, LABEL_dataframe_approximated, \
+    LABEL_ciq_scores, LABEL_dir_storing_dict_and_info, LABEL_discrete_intervals, LABEL_target_feature_analysis
 from causality_vmas.s2_1_causality_informativeness_quantification import CausalityInformativenessQuantification
 from causality_vmas.utils import my_approximation, save_file_incrementally, save_json_incrementally
-
-from path_repo import GLOBAL_PATH_REPO
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(processName)s - %(message)s')
@@ -30,24 +25,28 @@ class SensitiveAnalysis:
         logging.info('Approximations done')
         return list_dict_approx
 
-    def _compute_and_save_single_ciq(self, single_dict_approx) -> Dict:
-        approximation_dict = {k: v for k, v in single_dict_approx.items() if k != LABEL_dataframe_approximated}
-
+    def _compute_and_save_single_ciq(self, single_dict_approx):
         df_approx = single_dict_approx[LABEL_dataframe_approximated]
+        params_approximation = single_dict_approx[LABEL_approximation_parameters]
+        discrete_intervals = single_dict_approx[LABEL_discrete_intervals]
 
         ciq = CausalityInformativenessQuantification(df_approx, self.target_feature)
-        res_ciq, res_causality = ciq.evaluate()
+        dict_scores, dict_causal_graph, dict_bn_info = ciq.evaluate()
 
-        single_res = {LABEL_target_feature: self.target_feature,
-                      LABEL_approximation_parameters: approximation_dict,
-                      LABEL_ciq_results: res_ciq,
-                      LABEL_dict_causality: res_causality}
+        save_file_incrementally(df_approx, self.dir_save, 'df_', 'pkl')
 
-        self._store_results(single_res, df_approx)
-        logging.info(f'Results computed and saved for {approximation_dict} approximation')
-        gc.collect()  # Force garbage collection
+        save_json_incrementally(dict_causal_graph, self.dir_save, "causal_graph_")
+        save_json_incrementally(dict_bn_info, self.dir_save, "bn_params")
+        save_json_incrementally(params_approximation, self.dir_save, "approx_params_")
 
-        return single_res
+        others = {LABEL_discrete_intervals: discrete_intervals}
+        save_json_incrementally(others, self.dir_save, 'others')
+
+        dict_scores_evaluation = {LABEL_target_feature_analysis: self.target_feature,
+                                  LABEL_ciq_scores: dict_scores}
+        save_json_incrementally(dict_scores_evaluation, self.dir_save, 'scores_')
+
+        logging.info(f'Results computed and saved for {params_approximation} approximation')
 
     """def computing_CIQs(self) -> Tuple[List[Dict], str]:
         MEMORY_USAGE = 0.5
@@ -86,35 +85,29 @@ class SensitiveAnalysis:
             logging.info(f'Starting 1 process with {max_workers} workers')
             self.results = [self._compute_and_save_single_ciq(list_dict_approx[0])]
 
-        return self.results, self.dir_save"""
+        return self.results, self.dir_save
+    
+    def _handle_error(self, error):
+        logging.error(f'Error in process: {error}')"""
 
-    def computing_CIQs(self) -> Tuple[List[Dict], str]:
+    def computing_CIQs(self) -> str:
         list_dict_approx = self._compute_df_approximations()
 
-        self.results = [self._compute_and_save_single_ciq(dict_approx) for dict_approx in list_dict_approx]
+        for dict_approx in list_dict_approx:
+            self._compute_and_save_single_ciq(dict_approx)
 
-        return self.results, self.dir_save
-
-    def _collect_result(self, result):
-        self.results.append(result)
-
-    def _handle_error(self, error):
-        logging.error(f'Error in process: {error}')
-
-    def _store_results(self, dict_to_store: Dict, df_to_store: pd.DataFrame):
-        save_file_incrementally(df_to_store, self.dir_save, prefix='df_', extension='pkl')
-        save_json_incrementally(dict_to_store, self.dir_save, prefix='info_')
+        return self.dir_save
 
 
 def main():
     task_name = 'navigation'
 
-    df = pd.read_pickle(f'{GLOBAL_PATH_REPO}/causality_vmas/dataframes/{task_name}_mdp.pkl')
+    df = pd.read_pickle(f'./dataframes/df_{task_name}_pomdp_discrete_actions_1.pkl')
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
-    df = df.loc[:100001, agent0_columns]
+    df = df.loc[:10001, agent0_columns]
 
     sensitive_analysis = SensitiveAnalysis(df, task_name)
-    results, path_results = sensitive_analysis.computing_CIQs()
+    path_results = sensitive_analysis.computing_CIQs()
 
 
 if __name__ == '__main__':
