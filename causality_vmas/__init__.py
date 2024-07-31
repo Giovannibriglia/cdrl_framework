@@ -1,8 +1,11 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
 
 LABEL_target_feature_analysis = 'target_feature'
 LABEL_approximation_parameters = 'approx_params'
-LABEL_causal_graph = 'causal_graph'
-LABEL_bn_dict = 'bn_info'
+
 LABEL_ciq_scores = 'scores'
 LABEL_dataframe_approximated = 'new_df'
 LABEL_discrete_intervals = 'discrete_intervals'

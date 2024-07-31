@@ -1,7 +1,7 @@
 
 simulation:
     n_envs: 100
-    n_steps_for_env: 10000
+    n_steps_for_env: 1000
     random_action: True
     mdp: False
 

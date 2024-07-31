@@ -1,14 +1,13 @@
+import json
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict
 import networkx as nx
 import pandas as pd
 from tqdm import tqdm
-import json
 
 from causality_algos import SingleCausalInference
-from causality_vmas import LABEL_bn_dict, LABEL_reward_action_values, LABEL_causal_graph, \
-    LABEL_dir_storing_dict_and_info
-from causality_vmas.utils import list_to_graph
+from causality_vmas import LABEL_reward_action_values, LABEL_dir_storing_dict_and_info
+from causality_vmas.utils import list_to_graph, is_folder_empty
 
 
 class OfflineCausalInferenceForRL:
@@ -101,19 +100,25 @@ class OfflineCausalInferenceForRL:
 def main(task: str = 'navigation'):
     path_file = f'{LABEL_dir_storing_dict_and_info}_{task}/best'
 
-    dataframe = pd.read_pickle(f'{path_file}/best_df.pkl')
+    if not is_folder_empty(path_file):
+        dataframe = pd.read_pickle(f'{path_file}/best_df.pkl')
 
-    with open(f'{path_file}/best_causal_graph.json', 'r') as file:
-        graph_list = json.load(file)[LABEL_causal_graph]
-    graph = list_to_graph(graph_list)
+        with open(f'{path_file}/best_causal_graph.json', 'r') as file:
+            graph_list = json.load(file)
+        causal_graph = list_to_graph(graph_list)
 
-    with open(f'{path_file}/best_bn_params.json', 'r') as file:
-        bn_dict = json.load(file)[LABEL_bn_dict]
+        with open(f'{path_file}/best_bn_params.json', 'r') as file:
+            bn_dict = json.load(file)
 
-    offline_ci = OfflineCausalInferenceForRL(dataframe, graph, bn_dict)
-    ct = offline_ci.create_causal_table(show_progress=True)
-    ct.to_pickle(f'{path_file}/causal_table.pkl')
-    ct.to_excel('mario.xlsx')
+        if (dataframe is not None and causal_graph is not None) or bn_dict is not None:
+            offline_ci = OfflineCausalInferenceForRL(dataframe, causal_graph, bn_dict)
+            ct = offline_ci.create_causal_table(show_progress=True)
+            ct.to_pickle(f'{path_file}/causal_table.pkl')
+            ct.to_excel('mario.xlsx')
+        else:
+            print('some files are empty')
+    else:
+        print('there are no best')
 
 
 if __name__ == '__main__':

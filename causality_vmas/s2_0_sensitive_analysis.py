@@ -1,6 +1,7 @@
-from typing import List, Dict
-import pandas as pd
 import logging
+from typing import List, Dict
+
+import pandas as pd
 
 from causality_vmas import LABEL_approximation_parameters, LABEL_dataframe_approximated, \
     LABEL_ciq_scores, LABEL_dir_storing_dict_and_info, LABEL_discrete_intervals, LABEL_target_feature_analysis

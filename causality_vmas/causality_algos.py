@@ -1,21 +1,21 @@
 import itertools
-from typing import Dict
-import re
-import networkx as nx
-import pandas as pd
 import random
-import multiprocessing
+import re
+from typing import Dict
 
-from pgmpy.inference.CausalInference import CausalInference
-from pgmpy.models.BayesianNetwork import BayesianNetwork
+import causalnex
+import networkx as nx
 import numpy as np
+import pandas as pd
 from causallearn.search.ConstraintBased.PC import pc
 from causalnex.inference import InferenceEngine
-import causalnex
 from causalnex.structure.pytorch import from_pandas
 from pgmpy.estimators import MaximumLikelihoodEstimator
+from pgmpy.inference.CausalInference import CausalInference
+from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm.auto import tqdm
-from causality_vmas.utils import plot_graph, dict_to_bn
+
+from causality_vmas.utils import dict_to_bn
 
 COL_REWARD_ACTION_VALUES = 'reward_action_values'
 

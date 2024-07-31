@@ -2,13 +2,14 @@ import json
 import os
 import shutil
 from typing import List, Dict, Any
+
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from tqdm import tqdm
-from matplotlib import pyplot as plt
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import seaborn as sns
+from matplotlib import pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from tqdm import tqdm
 
 from causality_vmas import (LABEL_ciq_scores, LABEL_binary_metrics, LABEL_distance_metrics, LABEL_target_value,
                             LABEL_predicted_value, LABEL_target_feature_analysis, LABEL_discrete_intervals,
@@ -73,7 +74,7 @@ class BestApprox:
         errors = np.array(true_labels) - np.array(predicted_labels)
 
         metrics = {}
-        for metric_name, metric_computation in self.dict_metrics[LABEL_distance_metrics]:
+        for metric_name, metric_computation in self.dict_metrics[LABEL_distance_metrics].items():
             metrics[metric_name] = metric_computation(errors)
         return metrics
 
@@ -82,7 +83,7 @@ class BestApprox:
         pred = [1 if true_labels[n] == predicted_labels[n] else 0 for n in range(len(predicted_labels))]
 
         metrics = {}
-        for metric_name, metric_computation in self.dict_metrics[LABEL_binary_metrics]:
+        for metric_name, metric_computation in self.dict_metrics[LABEL_binary_metrics].items():
             metrics[metric_name] = metric_computation(true, pred)
 
         return metrics
@@ -103,6 +104,8 @@ class BestApprox:
                 params_approx = json.load(file)
 
             target_feature = result[LABEL_target_feature_analysis]
+            scores = result[LABEL_ciq_scores]
+            print(index_res, scores)
 
             with open(f'{self.path_results}/others_{index_res}.json', 'r') as file:
                 others = json.load(file)
@@ -111,8 +114,6 @@ class BestApprox:
 
             max_distance_error = len(intervals_target_feature)
             self._setup_distance_metrics(max_distance_error)
-
-            scores = result[LABEL_ciq_scores]
 
             target_values = scores[LABEL_target_value]
             pred_values = scores[LABEL_predicted_value]

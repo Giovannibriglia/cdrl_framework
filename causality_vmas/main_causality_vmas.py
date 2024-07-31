@@ -1,7 +1,7 @@
-import pandas as pd
 import json
 
-from causality_vmas import LABEL_bn_dict, LABEL_causal_graph
+import pandas as pd
+
 from causality_vmas.s1_0_extract_df_task_vmas import VMASExperiment
 from causality_vmas.s2_0_sensitive_analysis import SensitiveAnalysis
 from causality_vmas.s3_0_find_best_approximation import BestApprox
@@ -29,17 +29,19 @@ def main(task_name: str = 'navigation'):
         dataframe = pd.read_pickle(f'{path_file}/best_df.pkl')
 
         with open(f'{path_file}/best_causal_graph.json', 'r') as file:
-            graph_list = json.load(file)[LABEL_causal_graph]
+            graph_list = json.load(file)
         causal_graph = list_to_graph(graph_list)
 
         with open(f'{path_file}/best_bn_params.json', 'r') as file:
-            bn_dict = json.load(file)[LABEL_bn_dict]
+            bn_dict = json.load(file)
 
         if (dataframe is not None and causal_graph is not None) or bn_dict is not None:
             offline_ci = OfflineCausalInferenceForRL(dataframe, causal_graph, bn_dict)
             ct = offline_ci.create_causal_table(show_progress=True)
             ct.to_pickle(f'{path_file}/causal_table.pkl')
             ct.to_excel('mario.xlsx')
+        else:
+            print('some files are empty')
     else:
         print('there are no best')
 

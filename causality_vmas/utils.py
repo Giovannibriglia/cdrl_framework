@@ -1,29 +1,26 @@
 import gc
-from collections import Counter
-from decimal import Decimal
-from itertools import combinations
-import multiprocessing
-from typing import Dict, Tuple, List
-import random
+import itertools
 import json
+import multiprocessing
 import os
 import pickle
+import random
 import re
+from decimal import Decimal
+from typing import Dict, Tuple, List
+
 import networkx as nx
-import psutil
-import seaborn as sns
-import itertools
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import torch
 import yaml
-from causalnex.structure import StructureModel
 from matplotlib import pyplot as plt
 from pgmpy.factors.discrete import TabularCPD
 from pgmpy.models import BayesianNetwork
-from sklearn.preprocessing import StandardScaler
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from scipy.spatial.distance import squareform
+from sklearn.preprocessing import StandardScaler
 
 from causality_vmas import LABEL_kind_group_var, LABEL_value_group_var, LABEL_approximation_parameters, \
     LABEL_dataframe_approximated, LABEL_discrete_intervals

@@ -1,19 +1,16 @@
+import logging
+import os
 from concurrent.futures import as_completed, ProcessPoolExecutor
-from multiprocessing import Manager, Pool
-from typing import Dict, Tuple, Set, Any, List
-
+from typing import Dict, Tuple
 import networkx as nx
 import pandas as pd
-from tqdm import tqdm
-import os
 import psutil
-import logging
+from tqdm import tqdm
 
+from causality_vmas import LABEL_target_value, LABEL_predicted_value
 from causality_vmas.causality_algos import CausalDiscovery, SingleCausalInference
-from causality_vmas.utils import get_df_boundaries, constraints_causal_graph, bn_to_dict, \
-    graph_to_list, _navigation_approximation, split_dataframe
-from causality_vmas import LABEL_causal_graph, LABEL_bn_dict, LABEL_target_value, \
-    LABEL_predicted_value
+from causality_vmas.utils import constraints_causal_graph, bn_to_dict, \
+    _navigation_approximation
 
 show_progress_cd = False
 
@@ -53,7 +50,8 @@ class CausalityInformativenessQuantification:
             self.cd_process()
         except Exception as e:
             logging.error(f'Causal discovery error: {e}')
-            return {}, nx.DiGraph(), {}
+            return self.dict_scores, self.causal_graph, self.bn_info
+
         self.ci_assessment(show_progress=True)
         return self.dict_scores, self.causal_graph, self.bn_info
 
@@ -140,7 +138,7 @@ class CausalityInformativenessQuantification:
             single_ci = SingleCausalInference(self.df, self.causal_graph)
         except Exception as e:
             logging.error(f'Error in causal bayesian network definition: {e}')
-            return self.dict_scores, self.causal_graph, self.bn_info
+            return
 
         cbn = single_ci.return_cbn()
         cbn_in_dict = bn_to_dict(cbn)
@@ -175,8 +173,7 @@ class CausalityInformativenessQuantification:
                         self.dict_scores[LABEL_predicted_value].append(pred_value)
         except Exception as e:
             logging.error(f'Causal inference assessment failed: {e}')
-
-        return self.dict_scores, self.causal_graph, self.bn_info
+            return
 
     @staticmethod
     def _process_row(index_row, selected_columns, target_feature, single_ci) -> Tuple[float, float]:

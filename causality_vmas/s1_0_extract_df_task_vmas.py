@@ -1,18 +1,19 @@
+import importlib
 import os
+import sys
 import time
 from typing import Dict, Tuple
-import importlib
-from torch import Tensor
-from tqdm import tqdm
+
 import pandas as pd
 import torch
 import yaml
+from torch import Tensor
+from tqdm import tqdm
 
 from causality_vmas.utils import save_file_incrementally, save_json_incrementally
-
 from vmas import make_env
-from vmas.simulator.utils import save_video
 from vmas.simulator.heuristic_policy import RandomPolicy, BaseHeuristicPolicy
+from vmas.simulator.utils import save_video
 
 
 class VMASExperiment:
@@ -217,7 +218,7 @@ class VMASExperiment:
 
 def main(scenario_name: str):
     experiment = VMASExperiment(scenario_name)
-    df, path_res = experiment.run_experiment()
+    experiment.run_experiment()
 
 
 if __name__ == "__main__":
