@@ -24,7 +24,7 @@ from sklearn.preprocessing import StandardScaler
 
 from causality_vmas import LABEL_kind_group_var, LABEL_value_group_var, LABEL_approximation_parameters, \
     LABEL_dataframe_approximated, LABEL_discrete_intervals
-from path_repo import GLOBAL_PATH_REPO
+
 
 " ******************************************************************************************************************** "
 
@@ -181,7 +181,7 @@ def exploration_action(action_reward_values: Dict) -> int:
 
 
 def get_rl_knowledge(filepath, agent_id):
-    with open(f'{GLOBAL_PATH_REPO}/{filepath}', 'r') as file:
+    with open(f'{filepath}', 'r') as file:
         data = json.load(file)
 
     # Generate the agent key
