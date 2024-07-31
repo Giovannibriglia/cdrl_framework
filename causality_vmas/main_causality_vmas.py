@@ -10,9 +10,9 @@ from causality_vmas.utils import list_to_graph, is_folder_empty
 
 
 def main(task_name: str = 'navigation'):
+    print('Task: ', task_name)
     experiment = VMASExperiment(task_name)
     df, _ = experiment.run_experiment()
-
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
     df = df.loc[:, agent0_columns]
 

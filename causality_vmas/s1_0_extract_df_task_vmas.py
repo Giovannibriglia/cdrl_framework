@@ -137,9 +137,9 @@ class VMASExperiment:
             self.dict_info_to_return['features_mapping'] = {f'obs_{n}': self.feature_names[n] for n in
                                                             range(len(self.feature_names))}
 
-        dict_row = {}
-        for agent_index, agent_name in enumerate(obs.keys()):
-            for env_index in range(len(obs[agent_name])):
+        for env_index in range(len(next(iter(obs.values())))):
+            dict_row = {}
+            for agent_index, agent_name in enumerate(obs.keys()):
                 current_obs = obs[agent_name][env_index].cpu().numpy()
                 current_reward = rews[agent_name][env_index].cpu().numpy()
                 agent_action = actions[agent_name][env_index].cpu().numpy()
@@ -166,7 +166,7 @@ class VMASExperiment:
                 for n, value in enumerate(agent_action):
                     dict_row[f'{agent_name}_action_{n}'] = value
 
-        self.list_story.append(dict_row)
+            self.list_story.append(dict_row)
 
     def run_experiment(self) -> Tuple[pd.DataFrame, str]:
         frame_list = [] if self.render and self.save_render else None
@@ -192,7 +192,7 @@ class VMASExperiment:
                     frame_list.append(frame)
 
         total_time = round((time.time() - init_time) / 60, 2)
-        print(f"{self.scenario_name}: {total_time} minutes for {self.n_envs} parallel environments")
+        # print(f"{self.scenario_name}: {total_time} minutes for {self.n_envs} parallel environments")
 
         self.df_story = pd.DataFrame(self.list_story)
 

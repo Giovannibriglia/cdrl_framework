@@ -43,7 +43,7 @@ class CausalityInformativenessQuantification:
 
     def evaluate(self) -> Tuple[Dict, nx.DiGraph, Dict]:
         self.dict_scores = {LABEL_target_value: [], LABEL_predicted_value: []}
-        self.causal_graph = self.causal_graph if self.causal_graph is not None else []
+        self.causal_graph = self.causal_graph if self.causal_graph is not None else nx.DiGraph()
         self.bn_info = {}
 
         try:
