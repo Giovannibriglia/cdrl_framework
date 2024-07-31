@@ -419,7 +419,11 @@ def _discretize_value(value, intervals):
         return intervals[0]
     elif idx >= len(intervals):
         return intervals[-1]
-    return (intervals[idx - 1] + intervals[idx]) / 2
+    else:
+        if abs(value - intervals[idx - 1]) <= abs(value - intervals[idx]):
+            return intervals[idx - 1]
+        else:
+            return intervals[idx]
 
 
 def _create_intervals(min_val, max_val, n_intervals, scale='linear'):
@@ -622,7 +626,7 @@ def bn_to_dict(model: BayesianNetwork):
     return model_data
 
 
-def dict_to_bn(model_data):
+def dict_to_bn(model_data) -> BayesianNetwork:
     model = BayesianNetwork()
     model.add_nodes_from(model_data["nodes"])
     model.add_edges_from(model_data["edges"])
@@ -649,6 +653,16 @@ def dict_to_bn(model_data):
 
     model.check_model()
     return model
+
+
+def extract_intervals_from_bn(model: BayesianNetwork):
+    intervals_dict = {}
+    for node in model.nodes():
+        cpd = model.get_cpds(node)
+        if cpd:
+            # Assuming discrete nodes with states
+            intervals_dict[node] = cpd.state_names[node]
+    return intervals_dict
 
 
 " ******************************************************************************************************************** "
@@ -754,6 +768,7 @@ def plot_distributions(df):
 
 
 def get_numeric_part(input_string: str) -> int:
+    print(input_string)
     numeric_part = re.findall(r'\d+', input_string)
     out_number = int(numeric_part[0]) if numeric_part else None
     return out_number

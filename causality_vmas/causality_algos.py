@@ -443,6 +443,9 @@ class SingleCausalInference:
         self.causal_graph = causal_graph
         self.features = self.causal_graph.nodes
 
+        if dict_ready_cbn is None and (df is None and causal_graph is None):
+            raise ImportError('dataframe - causal graph - bayesian network are None')
+
         if dict_ready_cbn is None:
             self.cbn = BayesianNetwork()
             self.cbn.add_edges_from(ebunch=self.causal_graph.edges())

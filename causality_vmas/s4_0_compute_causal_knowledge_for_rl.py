@@ -10,7 +10,7 @@ from causality_vmas import LABEL_reward_action_values, LABEL_dir_storing_dict_an
 from causality_vmas.utils import list_to_graph, is_folder_empty
 
 
-class OfflineCausalInferenceForRL:
+class CausalInferenceForRL:
     def __init__(self, df: pd.DataFrame, causal_graph: nx.DiGraph, bn_info: Dict = None):
         self.df = df
         self.causal_graph = causal_graph
@@ -45,12 +45,14 @@ class OfflineCausalInferenceForRL:
             evid_value = evidence.get(state, None)
 
             if obs_value is not None and obs_value not in values:
+                print('*** ERROR ****')
                 print(state)
                 print(values)
                 print(obs_value)
                 not_in_observation[state] = obs_value
 
             if evid_value is not None and evid_value not in values:
+                print('*** ERROR ****')
                 print(state)
                 print(values)
                 print(evid_value)
@@ -111,7 +113,7 @@ def main(task: str = 'navigation'):
             bn_dict = json.load(file)
 
         if (dataframe is not None and causal_graph is not None) or bn_dict is not None:
-            offline_ci = OfflineCausalInferenceForRL(dataframe, causal_graph, bn_dict)
+            offline_ci = CausalInferenceForRL(dataframe, causal_graph, bn_dict)
             ct = offline_ci.create_causal_table(show_progress=True)
             ct.to_pickle(f'{path_file}/causal_table.pkl')
             ct.to_excel('mario.xlsx')

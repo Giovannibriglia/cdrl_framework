@@ -105,7 +105,6 @@ class BestApprox:
 
             target_feature = result[LABEL_target_feature_analysis]
             scores = result[LABEL_ciq_scores]
-            print(index_res, scores)
 
             with open(f'{self.path_results}/others_{index_res}.json', 'r') as file:
                 others = json.load(file)

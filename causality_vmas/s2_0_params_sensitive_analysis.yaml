@@ -1,8 +1,8 @@
 
 navigation:
-      ROWS: [25000, 50000]
-      BINS: [10, 20, 30]
-      RAYS: [1, 2, 3]
+      ROWS: [25000]
+      BINS: [20]
+      RAYS: [2]
 
 discovery:
       N_AGENTS: [20, 40]

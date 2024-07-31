@@ -42,6 +42,7 @@ class SensitiveAnalysis:
             save_json_incrementally(dict_bn_info, self.dir_save, "bn_params_")
             save_json_incrementally(params_approximation, self.dir_save, "approx_params_")
 
+            # TODO: save also "info"
             others = {LABEL_discrete_intervals: discrete_intervals}
             save_json_incrementally(others, self.dir_save, 'others_')
 
