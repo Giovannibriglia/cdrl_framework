@@ -25,7 +25,6 @@ from sklearn.preprocessing import StandardScaler
 from causality_vmas import LABEL_kind_group_var, LABEL_value_group_var, LABEL_approximation_parameters, \
     LABEL_dataframe_approximated, LABEL_discrete_intervals
 
-
 " ******************************************************************************************************************** "
 
 
@@ -413,7 +412,7 @@ def values_to_bins(values: List[float], intervals: List[float]) -> List[int]:
     return new_values
 
 
-def _discretize_value(value, intervals):
+def discretize_value(value, intervals):
     idx = np.digitize(value, intervals, right=False)
     if idx == 0:
         return intervals[0]
@@ -448,7 +447,7 @@ def discretize_dataframe(df, n_bins=50, scale='linear', not_discretize_these: Li
             max_value = df[column].max()
             intervals = _create_intervals(min_value, max_value, n_bins, scale)
             variable_discrete_intervals[column] = intervals.tolist()
-            discrete_df[column] = df[column].apply(lambda x: _discretize_value(x, intervals))
+            discrete_df[column] = df[column].apply(lambda x: discretize_value(x, intervals))
             # discrete_df[column] = np.vectorize(lambda x: intervals[_discretize_value(x, intervals)])(df[column])
     return discrete_df, variable_discrete_intervals
 
@@ -491,7 +490,7 @@ def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1)
         min_value = new_col.min()
         max_value = new_col.max()
         intervals = _create_intervals(min_value, max_value, 4, 'linear')
-        dataframe[max_col_name] = new_col.apply(lambda x: _discretize_value(x, intervals))
+        dataframe[max_col_name] = new_col.apply(lambda x: discretize_value(x, intervals))
 
     # Step 5: Drop original variable columns if needed
     dataframe.drop(columns=variable_columns, inplace=True)
@@ -521,6 +520,56 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
                    LABEL_discrete_intervals: discrete_intervals,
                    LABEL_dataframe_approximated: new_df}
     return approx_dict
+
+
+def _navigation_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
+    intervals = kwargs['discrete_intervals']
+    features_bn = list(intervals.keys())
+
+    n_rays = 0
+    for feat in features_bn:
+        if LABEL_kind_group_var in feat:
+            n_rays += 1
+
+    sensors_keys = [s for s in list(input_obs.keys()) if 'ray' in s]
+
+    kind_rays = [0] * n_rays
+    value_rays = [0.0] * n_rays
+
+    for key in sensors_keys:
+        for i in range(n_rays):
+            if f'ray_{i}' in key:
+                value = input_obs[key]
+                if value > value_rays[i]:
+                    value_rays[i] = value
+                    kind_rays[i] = 1
+                elif value == value_rays[i]:
+                    kind_rays[i] += 1
+
+    obs = {key: value for key, value in input_obs.items() if 'ray' not in key}
+
+    for i in range(n_rays):
+        obs[f'kind_ray_{i}'] = kind_rays[i]
+        obs[f'value_ray_{i}'] = value_rays[i]
+
+    final_obs = {}
+    for key, value in obs.items():
+        if 'ray' not in key:
+            final_obs[f'agent_0_{key}'] = value
+        else:
+            final_obs[key] = value
+
+    final_obs = {key: discretize_value(value, intervals[key]) for key, value in final_obs.items()}
+
+    return final_obs
+
+
+def inverse_approximation_function(task: str):
+    if task == 'navigation':
+        return _navigation_inverse_approximation
+    # TODO: others
+    else:
+        raise NotImplementedError("The inverse approximation function for this task has not been implemented")
 
 
 def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
@@ -591,7 +640,10 @@ def save_json_incrementally(data, folder_path, prefix):
 
     # print(f'Saved JSON to {file_path}')
 
+
 " ******************************************************************************************************************** "
+
+
 def is_folder_empty(folder_path):
     # Get the list of files and directories in the specified folder
     contents = os.listdir(folder_path)
@@ -601,6 +653,7 @@ def is_folder_empty(folder_path):
         return True
     else:
         return False
+
 
 " ******************************************************************************************************************** "
 
