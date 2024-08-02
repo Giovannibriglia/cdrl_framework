@@ -3,6 +3,7 @@ import os
 import shutil
 from typing import List, Dict, Any
 
+import networkx as nx
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -13,14 +14,34 @@ from tqdm import tqdm
 
 from causality_vmas import (LABEL_ciq_scores, LABEL_binary_metrics, LABEL_distance_metrics, LABEL_target_value,
                             LABEL_predicted_value, LABEL_target_feature_analysis, LABEL_discrete_intervals,
-                            LABEL_dir_storing_dict_and_info)
-from causality_vmas.utils import values_to_bins, get_numeric_part
+                            LABEL_dir_storing_dict_and_info, LABEL_causal_graph_distance_metrics,
+                            LABEL_causal_graph_similarity_metrics)
+from causality_vmas.causality_algos import CausalDiscovery
+from causality_vmas.utils import values_to_bins, get_numeric_part, get_ClusteringCoefficientSimilarity, \
+    get_DegreeDistributionSimilarity, get_FrobeniusNorm, get_JaccardSimilarity, get_StructuralInterventionDistance, \
+    get_StructuralHammingDistance, get_MeanAbsoluteError, get_MeanSquaredError, get_RootMeanSquaredError, \
+    get_MedianAbsoluteError, list_to_graph
 
 
 class BestApprox:
-    def __init__(self, path_results: str):
-        self.df_metrics = None
+    def __init__(self, path_results: str, target: nx.DiGraph | List | pd.DataFrame = None):
+
         self.path_results = path_results
+        if target is not None:
+            if isinstance(target, nx.DiGraph):
+                self.G_target = target
+            elif isinstance(target, list):
+                self.G_target = list_to_graph(target)
+            elif isinstance(target, pd.DataFrame):
+                cd = CausalDiscovery(target)
+                cd.training()
+                self.G_target = cd.return_causal_graph()
+            else:
+                raise ValueError('the target variable provided is not supported')
+        else:
+            self.G_target = None
+
+        self.df_metrics = None
         self.dir_save_best = f'{path_results}/best'
         os.makedirs(self.dir_save_best, exist_ok=True)
         self.dict_metrics = {}
@@ -38,27 +59,28 @@ class BestApprox:
 
     def _setup_distance_metrics(self, max_error_possible):
         metrics = {
-            'mae': lambda errors: 1 - (self.mean_absolute_error(errors) / max_error_possible),
-            'mse': lambda errors: 1 - (self.mean_squared_error(errors) / (max_error_possible ** 2)),
-            'rmse': lambda errors: 1 - (self.root_mean_squared_error(errors) / max_error_possible),
-            'med_abs_err': lambda errors: 1 - (self.median_absolute_error(errors) / max_error_possible)
+            'mae': lambda errors: 1 - (get_MeanAbsoluteError(errors) / max_error_possible),
+            'mse': lambda errors: 1 - (get_MeanSquaredError(errors) / (max_error_possible ** 2)),
+            'rmse': lambda errors: 1 - (get_RootMeanSquaredError(errors) / max_error_possible),
+            'med_abs_err': lambda errors: 1 - (get_MedianAbsoluteError(errors) / max_error_possible)
         }
         self.dict_metrics[LABEL_distance_metrics] = metrics
 
-    @staticmethod
-    def mean_absolute_error(errors):
-        return np.mean(np.abs(errors))
+    def _setup_causality_distance_metrics(self):
+        metrics = {
+            'shd': get_StructuralHammingDistance,
+            'sid': get_StructuralInterventionDistance,
+            'frob_norm': get_FrobeniusNorm,
+        }
+        self.dict_metrics[LABEL_causal_graph_distance_metrics] = metrics
 
-    @staticmethod
-    def mean_squared_error(errors):
-        return np.mean(errors ** 2)
-
-    def root_mean_squared_error(self, errors):
-        return np.sqrt(self.mean_squared_error(errors))
-
-    @staticmethod
-    def median_absolute_error(errors):
-        return np.median(np.abs(errors))
+    def _setup_causality_similarity_metrics(self):
+        metrics = {
+            'js_': get_JaccardSimilarity,
+            'dds': get_DegreeDistributionSimilarity,
+            'ccs': get_ClusteringCoefficientSimilarity
+        }
+        self.dict_metrics[LABEL_causal_graph_similarity_metrics] = metrics
 
     def _extract_json_results(self) -> Dict[str, Any]:
         json_files = [f for f in os.listdir(self.path_results) if f.endswith('.json') and 'scores' in f]
@@ -88,14 +110,27 @@ class BestApprox:
 
         return metrics
 
-    def _compute_causality_metrics(self):
-        # TODO: implement causality assessment for evaluation
-        raise NotImplementedError
+    def _compute_causality_distance_metrics(self, G_pred: nx.DiGraph):
+        metrics = {}
+        for metric_name, metric_computation in self.dict_metrics[LABEL_causal_graph_distance_metrics].items():
+            metrics[metric_name] = metric_computation(self.G_target, G_pred)
+
+        return metrics
+
+    def _compute_causality_similarity_metrics(self, G_pred: nx.DiGraph):
+        metrics = {}
+        for metric_name, metric_computation in self.dict_metrics[LABEL_causal_graph_similarity_metrics].items():
+            metrics[metric_name] = metric_computation(self.G_target, G_pred)
+
+        return metrics
 
     def _compute_metrics(self) -> pd.DataFrame:
         metrics_list = []
 
         self._setup_binary_metrics()
+        if self.G_target is not None:
+            self._setup_causality_distance_metrics()
+            self._setup_causality_similarity_metrics()
 
         self.map_numbers = {}
         count = 0
@@ -127,13 +162,24 @@ class BestApprox:
                 binary_metrics = {key: 0 for key in self.dict_metrics[LABEL_binary_metrics]}
                 distance_metrics = {key: 0 for key in self.dict_metrics[LABEL_distance_metrics]}
 
-            metrics_list.append({**params_approx, **binary_metrics, **distance_metrics})
+            if self.G_target is not None:
+                with open(f'{self.path_results}/causal_graph_{index_res}.json', 'r') as file:
+                    list_causal_graph = json.load(file)
+                causal_graph = list_to_graph(list_causal_graph)
+                causal_distance_metrics = self._compute_causality_distance_metrics(causal_graph)
+                causal_similarity_metrics = self._compute_causality_similarity_metrics(causal_graph)
+                metrics_list.append({**params_approx, **binary_metrics, **distance_metrics,
+                                     **causal_distance_metrics, **causal_similarity_metrics})
+            else:
+                metrics_list.append({**params_approx, **binary_metrics, **distance_metrics})
 
             self.map_numbers[count] = index_res
             count += 1
 
         self.df_metrics = pd.DataFrame(metrics_list)
         for category, names in self.dict_metrics.items():
+            if isinstance(names, dict):
+                names = list(names.keys())
             self.df_metrics[f'mean_{category}_metric'] = self.df_metrics[names].mean(axis=1)
 
         self.df_metrics.to_pickle(f'{self.path_results}/sensitive_analysis_results.pkl')
@@ -156,13 +202,17 @@ class BestApprox:
 
     def plot_results(self, if_save: bool = False):
         for category in self.dict_metrics:
-            title = f'{category}-metrics category (bigger -> better)'
+            if category == LABEL_causal_graph_distance_metrics:
+                title = f'{category}-metrics category (smaller -> better)'
+            else:
+                title = f'{category}-metrics category (bigger -> better)'
             informative_keys = self._get_most_informative_keys(category)
             self._heatmap_definition(category, informative_keys, title, if_save)
 
     def _store_best(self):
 
         index_best_conf = self._get_best_params_info()
+
         if index_best_conf > -1:
             # df
             shutil.copy(os.path.join(self.path_results, f'df_{index_best_conf}.pkl'),
@@ -179,6 +229,9 @@ class BestApprox:
             # others
             shutil.copy(os.path.join(self.path_results, f'others_{index_best_conf}.json'),
                         os.path.join(self.dir_save_best, f'best_others.json'))
+            # others
+            shutil.copy(os.path.join(self.path_results, f'scores_{index_best_conf}.json'),
+                        os.path.join(self.dir_save_best, f'best_scores.json'))
 
     def _get_best_params_info(self) -> int:
         best_conf = {'index': -1, 'best_params': {}, 'best_average_metrics': 0}
@@ -210,7 +263,7 @@ class BestApprox:
                     params_features.append(col)
 
         X = df[params_features]
-        y = df[scores_features]
+        y = df[scores_features].values.ravel()
 
         model = RandomForestRegressor()
         model.fit(X, y)
@@ -227,9 +280,14 @@ class BestApprox:
 
 
 def main():
-    path_results = f'./{LABEL_dir_storing_dict_and_info}_navigation'
+    task = 'navigation'
+    path_results = f'./{LABEL_dir_storing_dict_and_info}_{task}'
 
-    best_approx = BestApprox(path_results)
+    df = pd.read_pickle(f'./dataframes/df_{task}_pomdp_discrete_actions_0.pkl')
+    agent0_columns = [col for col in df.columns if 'agent_0' in col]
+    df = df.loc[:100001, agent0_columns]
+
+    best_approx = BestApprox(path_results, df)
     best_approx.evaluate()
     best_approx.plot_results(if_save=True)
 

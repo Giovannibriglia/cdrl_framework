@@ -5,11 +5,8 @@ import pandas as pd
 import json
 import torch
 
-from causality_vmas import LABEL_reward_action_values
 from causality_vmas.s4_0_compute_causal_knowledge_for_rl import CausalInferenceForRL
-from causality_vmas.utils import list_to_graph, discretize_value, get_numeric_part, extract_intervals_from_bn, \
-    dict_to_bn, inverse_approximation_function
-from obs_ex import obs_example
+from causality_vmas.utils import list_to_graph, inverse_approximation_function
 
 with open(f'causality_vmas/results_sensitive_analysis_navigation/best/best_approx_params.json', 'r') as file:
     approx_params = json.load(file)
@@ -159,7 +156,5 @@ def main(task='navigation'):
         print(cd_actions_filter.get_actions(input_row))
 
 
-
 if __name__ == '__main__':
     main()
-    print(obs_example.size())

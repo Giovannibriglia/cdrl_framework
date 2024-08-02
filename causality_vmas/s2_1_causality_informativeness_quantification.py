@@ -1,7 +1,7 @@
 import logging
 import os
 from concurrent.futures import as_completed, ProcessPoolExecutor
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 import networkx as nx
 import pandas as pd
 import psutil
@@ -9,8 +9,8 @@ from tqdm import tqdm
 
 from causality_vmas import LABEL_target_value, LABEL_predicted_value
 from causality_vmas.causality_algos import CausalDiscovery, SingleCausalInference
-from causality_vmas.utils import constraints_causal_graph, bn_to_dict, \
-    _navigation_approximation
+from causality_vmas.utils import (constraints_causal_graph, _navigation_approximation,
+                                  plot_graph, extract_intervals_from_bn, inverse_approximation_function, bn_to_dict)
 
 show_progress_cd = False
 
@@ -19,18 +19,28 @@ logging.basicConfig(level=logging.INFO, format='%(processName)s - %(message)s')
 
 
 class CausalityInformativenessQuantification:
-    def __init__(self, df: pd.DataFrame, target_feature: str = 'action', cd_algo: str = 'PC'):
-        self.df = df
-        self.cd_algo = cd_algo
+    def __init__(self, task_name: str, df_approx: pd.DataFrame, df_target: pd.DataFrame = None, **kwargs):
 
-        self.bn_info = None
+        self.df_approx = df_approx
+        self.df_target = df_target if df_target is not None else self.df_approx.copy()
+
+        self.task_name = task_name
+        self.obs_train_to_test = inverse_approximation_function(self.task_name)
+
+        target_feature = kwargs.get('target_feature', 'reward')
+        self.cd_algo = kwargs.get('cd_algo', 'PC')
+        self.n_test_samples = kwargs.get('n_test_samples', 100)
+
+        self.dict_bn = None
+        self.discrete_intervals_bn = None
         self.dict_scores = None
         self.causal_graph = None
+        self.ci = None
 
-        self.action_col_name = str([s for s in df.columns.to_list() if 'action' in s][0])
+        self.action_col_name = str([s for s in df_approx.columns.to_list() if 'action' in s][0])
         if not self.action_col_name:
             raise ValueError('Action column did not find')
-        self.reward_col_name = str([s for s in df.columns.to_list() if 'reward' in s][0])
+        self.reward_col_name = str([s for s in df_approx.columns.to_list() if 'reward' in s][0])
         if not self.reward_col_name:
             raise ValueError('Reward column did not find')
 
@@ -44,125 +54,53 @@ class CausalityInformativenessQuantification:
     def evaluate(self) -> Tuple[Dict, nx.DiGraph, Dict]:
         self.dict_scores = {LABEL_target_value: [], LABEL_predicted_value: []}
         self.causal_graph = self.causal_graph if self.causal_graph is not None else nx.DiGraph()
-        self.bn_info = {}
+        self.dict_bn = {}
 
         try:
             self.cd_process()
         except Exception as e:
             logging.error(f'Causal discovery error: {e}')
-            return self.dict_scores, self.causal_graph, self.bn_info
+            return self.dict_scores, self.causal_graph, self.dict_bn
 
         self.ci_assessment(show_progress=True)
-        return self.dict_scores, self.causal_graph, self.bn_info
+        return self.dict_scores, self.causal_graph, self.dict_bn
 
     def cd_process(self):
         logging.info('Causal discovery...')
-        cd = CausalDiscovery(self.df)
+        cd = CausalDiscovery(self.df_approx)
         cd.training(cd_algo=self.cd_algo, show_progress=show_progress_cd)
         self.causal_graph = cd.return_causal_graph()
         self.causal_graph = constraints_causal_graph(self.causal_graph)
-
-    """def ci_assessment(self, show_progress: bool = False, num_splits: int = 4) -> Tuple[Dict, Dict]:
-        logging.info(f'Setting up causal bayesian network...')
-        try:
-            single_ci = SingleCausalInference(self.df, self.causal_graph)
-        except Exception as e:
-            logging.error(f'Error in causal bayesian network definition: {e}')
-            return {}, {}
-
-        cbn = single_ci.return_cbn()
-        cbn_in_dict = bn_to_dict(cbn)
-
-        causality_dict = {LABEL_causal_graph: graph_to_list(self.causal_graph), LABEL_bn_dict: cbn_in_dict}
-        res_score_dict = {LABEL_target_value: [], LABEL_predicted_value: []}
-
-        selected_columns = [s for s in self.df.columns.to_list() if s != self.target_feature]
-
-        df_chunks = split_dataframe(self.df, num_splits)
-
-        total_cpus = os.cpu_count()
-        cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = int(total_cpus / 2 * (1 - cpu_usage / 100))
-        n_workers = max(1, free_cpus)  # Ensure at least one worker is used
-
-        logging.info(f'Starting causal inference assessment with {n_workers} workers...')
-
-        manager = Manager()
-        progress_counter = manager.Value('i', 0)
-        total_rows = len(self.df)
-
-        try:
-            with Pool(n_workers) as pool:
-                futures = [
-                    pool.apply_async(self._process_chunk, args=(chunk, selected_columns, self.target_feature, single_ci, progress_counter))
-                    for chunk in df_chunks]
-
-                if show_progress:
-                    with tqdm(total=total_rows, desc='Inferring causal knowledge...', colour='blue') as pbar:
-                        while True:
-                            completed_rows = progress_counter.value
-                            pbar.n = completed_rows
-                            pbar.refresh()
-                            if completed_rows >= total_rows:
-                                break
-                else:
-                    for future in futures:
-                        chunk_res_score_dict = future.get()
-                        res_score_dict[LABEL_target_value].extend(chunk_res_score_dict[LABEL_target_value])
-                        res_score_dict[LABEL_predicted_value].extend(chunk_res_score_dict[LABEL_predicted_value])
-        except Exception as e:
-            logging.info(f'Causal Inference assessment completed: {e}')
-            return res_score_dict, causality_dict
-
-        logging.info('Causal Inference assessment completed')
-        return res_score_dict, causality_dict
-    
-    def _process_chunk(self, chunk_df, selected_columns, target_feature, single_ci, progress_counter) -> Dict[
-        str, List[float]]:
-        chunk_res_score_dict = {LABEL_target_value: [], LABEL_predicted_value: []}
-
-        for _, row in chunk_df.iterrows():
-            target_value, pred_value = self._process_row((_, row), selected_columns, target_feature, single_ci)
-            chunk_res_score_dict[LABEL_target_value].append(target_value)
-            chunk_res_score_dict[LABEL_predicted_value].append(pred_value)
-            with progress_counter.get_lock():
-                progress_counter.value += 1
-            print(progress_counter.value)
-
-        return chunk_res_score_dict"""
+        # plot_graph(self.causal_graph, title='', if_show=True)
 
     def ci_assessment(self, show_progress: bool = False):
 
         logging.info(f'Setting up causal bayesian network...')
         try:
-            single_ci = SingleCausalInference(self.df, self.causal_graph)
+            self.ci = SingleCausalInference(self.df_approx, self.causal_graph)
         except Exception as e:
             logging.error(f'Error in causal bayesian network definition: {e}')
             return
 
-        cbn = single_ci.return_cbn()
-        cbn_in_dict = bn_to_dict(cbn)
-
-        self.bn_info = cbn_in_dict
-
-        tasks = list(self.df.iterrows())
+        cbn = self.ci.return_cbn()
+        self.discrete_intervals_bn = extract_intervals_from_bn(cbn)
+        self.dict_bn = bn_to_dict(cbn)
 
         total_cpus = os.cpu_count()
         cpu_usage = psutil.cpu_percent(interval=1)
         free_cpus = min(5, int(total_cpus / 2 * (1 - cpu_usage / 100)))
         n_workers = max(1, free_cpus)  # Ensure at least one worker is used
 
-        selected_columns = [s for s in self.df.columns.to_list() if s != self.target_feature]
+        df_test = self.df_target.loc[:min(self.n_test_samples, len(self.df_target)), :]
+
+        tasks = [row.to_dict() for n, row in df_test.iterrows()]
 
         logging.info(f'Starting causal inference assessment with {n_workers} workers...')
         try:
             with ProcessPoolExecutor(max_workers=n_workers) as executor:
-                futures = [executor.submit(self._process_row, task, selected_columns, self.target_feature, single_ci)
-                           for
-                           task in tasks]
+                futures = [executor.submit(self._process_row, task) for task in tasks]
                 if show_progress:
-                    for future in tqdm(as_completed(futures), total=len(futures),
-                                       desc=f'Inferring causal knowledge...'):
+                    for future in tqdm(as_completed(futures), total=len(futures), desc=f'Inferring causal knowledge...'):
                         target_value, pred_value = future.result()
                         self.dict_scores[LABEL_target_value].append(target_value)
                         self.dict_scores[LABEL_predicted_value].append(pred_value)
@@ -175,27 +113,41 @@ class CausalityInformativenessQuantification:
             logging.error(f'Causal inference assessment failed: {e}')
             return
 
-    @staticmethod
-    def _process_row(index_row, selected_columns, target_feature, single_ci) -> Tuple[float, float]:
-        index, row = index_row
-        input_ci = row[selected_columns].to_dict()
-        output_ci = single_ci.infer(input_ci, target_feature)
-        value_target = row[target_feature]
-        value_pred = max(output_ci, key=output_ci.get)
+    def _process_row(self, row: Dict) -> Tuple[float, float]:
+
+        value_target = row[self.target_feature]
+
+        input_obs = {key: value for key, value in row.items() if self.target_feature not in key}
+
+        if self.obs_train_to_test is not None:
+            kwargs = {}
+            kwargs['discrete_intervals'] = self.discrete_intervals_bn
+            obs = self.obs_train_to_test(input_obs, **kwargs)
+        else:
+            obs = input_obs
+
+        evidence = obs.copy()
+        output_distribution = self.ci.infer(obs, self.target_feature, evidence)
+
+        value_pred = max(output_distribution, key=output_distribution.get)
+        value_pred = float(value_pred)
         value_pred = type(value_target)(value_pred)
+
         return value_target, value_pred
 
 
 def main():
-    df = pd.read_pickle(f'./dataframes/df_navigation_pomdp_discrete_actions_1.pkl')
+    task = 'navigation'
 
-    agent0_columns = [col for col in df.columns if 'agent_0' in col]
-    df = df.loc[:100001, agent0_columns]
-    dict_approx = _navigation_approximation((df, {'BINS': 100, 'SENSORS': 4, 'ROWS': 20000}))
-    df = dict_approx['new_df']
+    df_test = pd.read_pickle(f'./dataframes/df_{task}_pomdp_discrete_actions_0.pkl')
+    agent0_columns = [col for col in df_test.columns if 'agent_0' in col]
+    df_test = df_test.loc[:50001, agent0_columns]
+
+    dict_approx = _navigation_approximation((df_test, {'BINS': 20, 'SENSORS': 1, 'ROWS': 20000}))
+    df_train = dict_approx['new_df']
     # get_df_boundaries(df)
 
-    ciq = CausalityInformativenessQuantification(df)
+    ciq = CausalityInformativenessQuantification(task, df_train, df_test)
     ciq.evaluate()
 
 

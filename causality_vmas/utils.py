@@ -20,6 +20,8 @@ from pgmpy.factors.discrete import TabularCPD
 from pgmpy.models import BayesianNetwork
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from scipy.spatial.distance import squareform
+from scipy.stats import ks_2samp
+from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
 from causality_vmas import LABEL_kind_group_var, LABEL_value_group_var, LABEL_approximation_parameters, \
@@ -347,6 +349,7 @@ def _get_numeric_suffix(var, label):
 
 
 def constraints_causal_graph(causal_graph: nx.DiGraph):
+    # TODO: procedura generale?
     # no value_sensor -> value_sensor or kind_sensor -> kind_sensor
     # no value_sensor1 -> kind_sensor0 or kind_sensor1 -> value_sensor0
     # no vel -> distGoal or distGoal -> vel
@@ -453,6 +456,7 @@ def discretize_dataframe(df, n_bins=50, scale='linear', not_discretize_these: Li
 
 
 def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1) -> pd.DataFrame:
+    # TODO: servirebbe qualcosa di automatico
     first_key = LABEL_kind_group_var
     second_key = LABEL_value_group_var
 
@@ -505,8 +509,8 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
 
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
     df = df.loc[:, agent0_columns]
-    # TODO: chiedi a stefano cosa ne pensa: è ok 10 oppure mettiamo n_bins?
-    not_discretize = [s for s in df.columns.to_list() if len(df[s].unique()) <= 10]
+
+    not_discretize = [s for s in df.columns.to_list() if len(df[s].unique()) <= n_bins]
     new_df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize)
     new_df = group_variables(new_df, 'ray', n_rays)
     new_df = new_df.loc[:n_rows - 1, :]  # new_df.sample(n_rows-1, random_state=42)
@@ -554,7 +558,7 @@ def _navigation_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
 
     final_obs = {}
     for key, value in obs.items():
-        if 'ray' not in key:
+        if 'ray' not in key and 'agent_0' not in key:
             final_obs[f'agent_0_{key}'] = value
         else:
             final_obs[key] = value
@@ -729,6 +733,7 @@ def split_dataframe(df: pd.DataFrame, num_splits: int) -> List:
 
 
 def group_features_by_distribution(df, auto_threshold=True, threshold=None):
+    # TODO: fai da -1 a 1, così capisci la direzione
     """
     Groups features with similar distributions in a dataframe.
 
@@ -821,7 +826,197 @@ def plot_distributions(df):
 
 
 def get_numeric_part(input_string: str) -> int:
-    print(input_string)
     numeric_part = re.findall(r'\d+', input_string)
     out_number = int(numeric_part[0]) if numeric_part else None
     return out_number
+
+
+" ******************************************************************************************************************** "
+
+
+def get_MeanAbsoluteError(errors):
+    return np.mean(np.abs(errors))
+
+
+def get_MeanSquaredError(errors):
+    return np.mean(errors ** 2)
+
+
+def get_RootMeanSquaredError(errors):
+    return np.sqrt(get_MeanSquaredError(errors))
+
+
+def get_MedianAbsoluteError(errors):
+    return np.median(np.abs(errors))
+
+
+" ******************************************************************************************************************** "
+
+
+def get_adjacency_matrix(graph, order_nodes=None, weight=False) -> np.array:
+    """Retrieve the adjacency matrix from the nx.DiGraph or numpy array."""
+    if isinstance(graph, np.ndarray):
+        return graph
+    elif isinstance(graph, nx.DiGraph):
+        if order_nodes is None:
+            order_nodes = graph.nodes()
+        if not weight:
+            return np.array(nx.adjacency_matrix(graph, order_nodes, weight=None).todense())
+        else:
+            return np.array(nx.adjacency_matrix(graph, order_nodes).todense())
+    else:
+        raise TypeError("Only networkx.DiGraph and np.ndarray (adjacency matrixes) are supported.")
+
+
+def get_StructuralHammingDistance(target, pred, double_for_anticausal=True) -> float:
+    r"""Compute the Structural Hamming Distance.
+
+    The Structural Hamming Distance (SHD) is a standard distance to compare
+    graphs by their adjacency matrix. It consists in computing the difference
+    between the two (binary) adjacency matrixes: every edge that is either
+    missing or not in the target graph is counted as a mistake. Note that
+    for directed graph, two mistakes can be counted as the edge in the wrong
+    direction is false and the edge in the good direction is missing ; the
+    `double_for_anticausal` argument accounts for this remark. Setting it to
+    `False` will count this as a single mistake.
+
+    Args:
+        target (numpy.ndarray or networkx.DiGraph): Target graph, must be of
+            ones and zeros.
+        pred (numpy.ndarray or networkx.DiGraph): Prediction made by the
+            algorithm to evaluate.
+        double_for_anticausal (bool): Count the badly oriented edges as two
+            mistakes. Default: True
+
+    Returns:
+        int: Structural Hamming Distance (int).
+
+            The value tends to zero as the graphs tend to be identical."""
+
+    true_labels = get_adjacency_matrix(target)
+    predictions = get_adjacency_matrix(pred)  # , target.nodes() if isinstance(target, nx.DiGraph) else None)
+
+    # Padding predictions to match the shape of true_labels
+    pad_size = (true_labels.shape[0] - predictions.shape[0], true_labels.shape[1] - predictions.shape[1])
+    padded_predictions = np.pad(predictions, ((0, pad_size[0]), (0, pad_size[1])), mode='constant', constant_values=0)
+
+    diff = np.abs(true_labels - padded_predictions)
+    if double_for_anticausal:
+        return np.sum(diff)
+    else:
+        diff = diff + diff.transpose()
+        diff[diff > 1] = 1  # Ignoring the double edges.
+        return np.sum(diff) / 2
+
+
+def get_StructuralInterventionDistance(target, pred) -> int:
+    def find_intervention_distances(graph):
+        distances = {}
+        nodes = list(graph.nodes)
+        for i in range(len(nodes)):
+            for j in range(i + 1, len(nodes)):
+                try:
+                    dist = nx.shortest_path_length(graph, nodes[i], nodes[j])
+                    distances[(nodes[i], nodes[j])] = dist
+                    distances[(nodes[j], nodes[i])] = dist
+                except nx.NetworkXNoPath:
+                    distances[(nodes[i], nodes[j])] = float('inf')
+                    distances[(nodes[j], nodes[i])] = float('inf')
+        return distances
+
+    true_distances = find_intervention_distances(target)
+    estimated_distances = find_intervention_distances(pred)
+
+    all_keys = set(true_distances.keys()).union(set(estimated_distances.keys()))
+
+    sid = 0
+    for key in all_keys:
+        true_dist = true_distances.get(key, float('inf'))
+        estimated_dist = estimated_distances.get(key, float('inf'))
+        if true_dist != estimated_dist:
+            sid += 1
+
+    return sid
+
+
+def get_FrobeniusNorm(target_graph, pred_graph) -> float:
+    """
+    Compute the Frobenius norm between two matrices.
+
+    Parameters:
+    target (np.ndarray): First matrix.
+    pred (np.ndarray): Second matrix.
+
+    Returns:
+    float: Frobenius norm between target and pred.
+    """
+
+    target = get_adjacency_matrix(target_graph)
+    pred = get_adjacency_matrix(pred_graph)
+
+    def _resize_matrix(matrix: np.ndarray, new_shape: tuple) -> np.ndarray:
+        """
+        Resize a matrix to the new shape by padding with zeros if necessary.
+
+        Parameters:
+        matrix (np.ndarray): The matrix to resize.
+        new_shape (tuple): The desired shape.
+
+        Returns:
+        np.ndarray: The resized matrix.
+        """
+        resized_matrix = np.zeros(new_shape)
+        original_shape = matrix.shape
+        resized_matrix[:original_shape[0], :original_shape[1]] = matrix
+        return resized_matrix
+
+    if target.shape != pred.shape:
+        new_shape = (max(target.shape[0], pred.shape[0]), max(target.shape[1], pred.shape[1]))
+        target = _resize_matrix(target, new_shape)
+        pred = _resize_matrix(pred, new_shape)
+
+    return np.linalg.norm(target - pred, 'fro')
+
+
+def get_JaccardSimilarity(target, pred) -> float:
+    def _intersection(a, b):
+        return list(set(a) & set(b))
+
+    def _union(a, b):
+        return list(set(a) | set(b))
+
+    nodes_target = set(target.nodes)
+    nodes_pred = set(pred.nodes)
+    all_nodes = nodes_target | nodes_pred
+    similarity = 0
+    num_pairs = 0
+
+    for node1 in all_nodes:
+        neighbors1 = list(target.successors(node1)) if node1 in target else []
+        for node2 in all_nodes:
+            neighbors2 = list(pred.successors(node2)) if node2 in pred else []
+
+            intersection_size = len(_intersection(neighbors1, neighbors2))
+            union_size = len(_union(neighbors1, neighbors2))
+
+            if union_size > 0:
+                similarity += intersection_size / union_size
+                num_pairs += 1
+
+    return (similarity / num_pairs) if num_pairs > 0 else 0
+
+
+def get_DegreeDistributionSimilarity(target, pred) -> float:
+    # Function to calculate Degree Distribution Similarity (Kolmogorov-Smirnov)
+    # max = 1 = max diversity -> with "1-", 1 = max similarity
+    degrees1 = [d for n, d in target.degree()]
+    degrees2 = [d for n, d in pred.degree()]
+    return 1 - ks_2samp(degrees1, degrees2).statistic
+
+
+def get_ClusteringCoefficientSimilarity(target, pred) -> float:
+    # Function to calculate Clustering Coefficient Similarity
+    # max = 1 = max diversity -> with "1-", 1 = max similarity
+    cc1 = nx.average_clustering(target)
+    cc2 = nx.average_clustering(pred)
+    return 1 - abs(cc1 - cc2)

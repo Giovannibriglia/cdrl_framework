@@ -61,8 +61,8 @@ class VMASExperiment:
         self.last_obs = None if self.mdp else {f'agent_{i}': [0] * self.n_envs for i in range(self.n_agents)}
         self.last_rewards = None if self.mdp else {f'agent_{i}': [0] * self.n_envs for i in range(self.n_agents)}
 
-        self.dict_info_to_return = params_scenario.copy()
-        self.dict_info_to_return.update(params_sim)
+        self.dict_info = params_scenario.copy()
+        self.dict_info.update(params_sim)
 
         self.dir_save = f'./dataframes'
         os.makedirs(self.dir_save, exist_ok=True)
@@ -134,8 +134,8 @@ class VMASExperiment:
         if self.feature_names is None:
             total_features = obs[next(iter(obs))][0].shape[0]
             self.feature_names = self._generate_feature_names(total_features)
-            self.dict_info_to_return['features_mapping'] = {f'obs_{n}': self.feature_names[n] for n in
-                                                            range(len(self.feature_names))}
+            self.dict_info['features_mapping'] = {f'obs_{n}': self.feature_names[n] for n in
+                                                  range(len(self.feature_names))}
 
         for env_index in range(len(next(iter(obs.values())))):
             dict_row = {}
@@ -168,7 +168,7 @@ class VMASExperiment:
 
             self.list_story.append(dict_row)
 
-    def run_experiment(self) -> Tuple[pd.DataFrame, str]:
+    def run_experiment(self) -> Tuple[pd.DataFrame, Dict, str]:
         frame_list = [] if self.render and self.save_render else None
 
         init_time = time.time()
@@ -201,19 +201,19 @@ class VMASExperiment:
 
         self._store_results()
 
-        return self.df_story, self.dir_save
+        return self.df_story, self.dict_info, self.dir_save
 
     def _store_results(self):
         add = 'mdp' if self.mdp else 'pomdp'
         add += '_continuous_actions' if self.continuous_actions else '_discrete_actions'
         save_file_incrementally(self.df_story, self.dir_save, prefix=f'df_{self.scenario_name}_{add}_', extension='pkl')
-        save_json_incrementally(self.dict_info_to_return, self.dir_save, prefix=f'info_{self.scenario_name}_{add}_')
+        save_json_incrementally(self.dict_info, self.dir_save, prefix=f'info_{self.scenario_name}_{add}_')
 
     def return_df_story(self) -> pd.DataFrame:
         return self.df_story
 
     def return_dict_info(self) -> Dict:
-        return self.dict_info_to_return
+        return self.dict_info
 
 
 def main(scenario_name: str):

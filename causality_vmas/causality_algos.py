@@ -317,8 +317,8 @@ class CausalInferenceForRL:
         self.obs_train_to_test = obs_train_to_test
 
         self.ci = SingleCausalInference(df_train, causal_graph, bn_dict)
-
-        self.discrete_intervals_bn = extract_intervals_from_bn(self.ci.cbn)
+        cbn = self.ci.return_cbn()
+        self.discrete_intervals_bn = extract_intervals_from_bn(cbn)
 
         self.reward_variable = [s for s in df_train.columns.to_list() if 'reward' in s][0]
         self.reward_values = self.df_train[self.reward_variable].unique().tolist()
@@ -385,8 +385,8 @@ class CausalInferenceForRL:
 
     def create_causal_table(self, show_progress: bool = False) -> pd.DataFrame:
         rows_causal_table = []
-        """print('only 100 rows')
-        self.df_test = self.df_test.loc[:100, :]"""
+        print('only 100 rows')
+        self.df_test = self.df_test.loc[:100, :]
 
         selected_columns = [s for s in self.df_test.columns.to_list() if
                             s != self.reward_variable and s != self.action_variable]
