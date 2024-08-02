@@ -894,7 +894,7 @@ def get_StructuralHammingDistance(target, pred, double_for_anticausal=True) -> f
             The value tends to zero as the graphs tend to be identical."""
 
     true_labels = get_adjacency_matrix(target)
-    predictions = get_adjacency_matrix(pred)  # , target.nodes() if isinstance(target, nx.DiGraph) else None)
+    predictions = get_adjacency_matrix(pred)
 
     # Padding predictions to match the shape of true_labels
     pad_size = (true_labels.shape[0] - predictions.shape[0], true_labels.shape[1] - predictions.shape[1])
@@ -1020,3 +1020,28 @@ def get_ClusteringCoefficientSimilarity(target, pred) -> float:
     cc1 = nx.average_clustering(target)
     cc2 = nx.average_clustering(pred)
     return 1 - abs(cc1 - cc2)
+
+
+" ******************************************************************************************************************** "
+
+
+def get_fully_connected_graph(G_input: nx.DiGraph) -> nx.DiGraph:
+    fully_connected_G = nx.DiGraph()
+    # Add all nodes from the original graph to the new graph
+    fully_connected_G.add_nodes_from(G_input.nodes())
+    # Add edges between every pair of nodes to make it fully connected
+    for node in fully_connected_G.nodes():
+        for other_node in fully_connected_G.nodes():
+            if node != other_node:  # Avoid self-loops
+                fully_connected_G.add_edge(node, other_node)
+
+    return fully_connected_G
+
+
+def get_empty_graph(G_input: nx.DiGraph) -> nx.DiGraph:
+    # Create an empty directed graph
+    empty_graph = nx.DiGraph()
+    # Add the nodes from the original graph to the empty graph
+    empty_graph.add_nodes_from(G_input.nodes())
+
+    return empty_graph

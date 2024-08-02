@@ -2,7 +2,6 @@ import json
 import os
 import shutil
 from typing import List, Dict, Any
-
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -20,7 +19,7 @@ from causality_vmas.causality_algos import CausalDiscovery
 from causality_vmas.utils import values_to_bins, get_numeric_part, get_ClusteringCoefficientSimilarity, \
     get_DegreeDistributionSimilarity, get_FrobeniusNorm, get_JaccardSimilarity, get_StructuralInterventionDistance, \
     get_StructuralHammingDistance, get_MeanAbsoluteError, get_MeanSquaredError, get_RootMeanSquaredError, \
-    get_MedianAbsoluteError, list_to_graph
+    get_MedianAbsoluteError, list_to_graph, get_fully_connected_graph, get_empty_graph
 
 
 class BestApprox:
@@ -38,6 +37,10 @@ class BestApprox:
                 self.G_target = cd.return_causal_graph()
             else:
                 raise ValueError('the target variable provided is not supported')
+
+            self.empty_graph = get_empty_graph(self.G_target)
+            self.full_connected_graph = get_fully_connected_graph(self.G_target)
+
         else:
             self.G_target = None
 
@@ -67,10 +70,38 @@ class BestApprox:
         self.dict_metrics[LABEL_distance_metrics] = metrics
 
     def _setup_causality_distance_metrics(self):
+
+        def _rescale_from_0_to_1(value, max_value, min_value):
+            return (value - min_value) / (max_value - min_value)
+
+        def compute_rescaled_shd(G_target, G_pred):
+            shd_value = get_StructuralHammingDistance(G_target, G_pred)
+            return 1 - _rescale_from_0_to_1(shd_value, max_shd, min_shd)
+
+        def compute_rescaled_sid(G_target, G_pred):
+            sid_value = get_StructuralInterventionDistance(G_target, G_pred)
+            return 1 - _rescale_from_0_to_1(sid_value, max_sid, min_sid)
+
+        def compute_rescaled_frob_norm(G_target, G_pred):
+            frob_norm_value = get_FrobeniusNorm(G_target, G_pred)
+            return 1 - _rescale_from_0_to_1(frob_norm_value, max_frob_norm, min_frob_norm)
+
+        min_shd = 0
+        max_shd = get_StructuralHammingDistance(self.G_target, self.full_connected_graph)
+        # print('SHD: ', max_shd, min_shd)
+
+        min_sid = 0
+        max_sid = get_StructuralInterventionDistance(self.G_target, self.full_connected_graph)
+        # print('SID: ', max_sid, min_sid)
+
+        min_frob_norm = 0
+        max_frob_norm = get_FrobeniusNorm(self.G_target, self.full_connected_graph)
+        # print('FROB: ', max_frob_norm, min_frob_norm)
+
         metrics = {
-            'shd': get_StructuralHammingDistance,
-            'sid': get_StructuralInterventionDistance,
-            'frob_norm': get_FrobeniusNorm,
+            'shd': compute_rescaled_shd,
+            'sid': compute_rescaled_sid,
+            'frob_norm': compute_rescaled_frob_norm,
         }
         self.dict_metrics[LABEL_causal_graph_distance_metrics] = metrics
 
@@ -114,7 +145,6 @@ class BestApprox:
         metrics = {}
         for metric_name, metric_computation in self.dict_metrics[LABEL_causal_graph_distance_metrics].items():
             metrics[metric_name] = metric_computation(self.G_target, G_pred)
-
         return metrics
 
     def _compute_causality_similarity_metrics(self, G_pred: nx.DiGraph):
@@ -202,17 +232,14 @@ class BestApprox:
 
     def plot_results(self, if_save: bool = False):
         for category in self.dict_metrics:
-            if category == LABEL_causal_graph_distance_metrics:
-                title = f'{category}-metrics category (smaller -> better)'
-            else:
-                title = f'{category}-metrics category (bigger -> better)'
+            title = f'{category}-metrics category (bigger -> better)'
             informative_keys = self._get_most_informative_keys(category)
             self._heatmap_definition(category, informative_keys, title, if_save)
 
     def _store_best(self):
 
         index_best_conf = self._get_best_params_info()
-
+        print('Best configuration index: ', index_best_conf)
         if index_best_conf > -1:
             # df
             shutil.copy(os.path.join(self.path_results, f'df_{index_best_conf}.pkl'),
