@@ -29,7 +29,7 @@ class CausalityInformativenessQuantification:
 
         target_feature = kwargs.get('target_feature', 'reward')
         self.cd_algo = kwargs.get('cd_algo', 'PC')
-        self.n_test_samples = kwargs.get('n_test_samples', 100)
+        self.n_test_samples = kwargs.get('n_test_samples', 10000)
 
         self.dict_bn = None
         self.discrete_intervals_bn = None

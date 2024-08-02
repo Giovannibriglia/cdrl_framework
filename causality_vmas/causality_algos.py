@@ -385,8 +385,8 @@ class CausalInferenceForRL:
 
     def create_causal_table(self, show_progress: bool = False) -> pd.DataFrame:
         rows_causal_table = []
-        print('only 100 rows')
-        self.df_test = self.df_test.loc[:100, :]
+        """print('only 100 rows')
+        self.df_test = self.df_test.loc[:100, :]"""
 
         selected_columns = [s for s in self.df_test.columns.to_list() if
                             s != self.reward_variable and s != self.action_variable]
