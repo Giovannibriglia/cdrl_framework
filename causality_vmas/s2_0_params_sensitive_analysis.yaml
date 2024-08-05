@@ -1,7 +1,7 @@
 
 navigation:
       ROWS: [100000]
-      BINS: [15, 25, 50]
+      BINS: [25, 50]
       RAYS: [1, 2, 3]
 
 discovery:
