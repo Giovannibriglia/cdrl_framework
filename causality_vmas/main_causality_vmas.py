@@ -14,10 +14,6 @@ def main(task_name: str = 'navigation'):
     experiment = VMASExperiment(task_name)
     df_start, info_task, _ = experiment.run_experiment()
 
-    """df_start = pd.read_pickle(f'./dataframes/df_{task_name}_pomdp_discrete_actions_0.pkl')
-    with open(f'./dataframes/info_{task_name}_pomdp_discrete_actions_0.json', 'r') as file:
-        info_task = json.load(file)"""
-
     agent0_columns = [col for col in df_start.columns if 'agent_0' in col]
     df_start = df_start.loc[:, agent0_columns]
 

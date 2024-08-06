@@ -1,0 +1,52 @@
+
+navigation:
+    features:
+         1: "PosX"
+         2: "PosY"
+         3: "VelX"
+         4: "VelY"
+         5: "DistGX"
+         6: "DistGY"
+         others: "ray"
+
+discovery:
+    features:
+        1: "PosX"
+        2: "PosY"
+        3: "VelX"
+        4: "VelY"
+        others: "ray"
+
+flocking:
+    features:
+        1: "PosX"
+        2: "PosY"
+        3: "VelX"
+        4: "VelY"
+        5: "DistGX"
+        6: "DistGY"
+        others: "ray"
+
+balance:
+    features:
+        1: "VelX"
+        2: "VelY"
+        3: "DistAgentPackX"
+        4: "DistAgentPackY"
+        5: "DistAgentLineX"
+        6: "DistAgentLineY"
+        7: "DistPackGoalX"
+        8: "DistPackGoalY"
+        9: "VelPackX"
+        10: "VelPackY"
+        11: "VelLineX"
+        12: "VelLineX"
+        13: "AngVel"
+        14: "Rot"
+
+give_way:
+    features:
+        1: "PosX"
+        2: "PosY"
+        3: "VelX"
+        4: "VelY"

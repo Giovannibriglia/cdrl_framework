@@ -306,13 +306,12 @@ class BestApprox:
         return top_2_features
 
 
-def main():
-    task = 'navigation'
+def main(task):
     path_results = f'./{LABEL_dir_storing_dict_and_info}_{task}'
 
     df = pd.read_pickle(f'./dataframes/df_{task}_pomdp_discrete_actions_0.pkl')
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
-    df = df.loc[:100001, agent0_columns]
+    df = df.loc[:, agent0_columns]
 
     best_approx = BestApprox(path_results, df)
     best_approx.evaluate()
@@ -320,4 +319,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main('flocking')

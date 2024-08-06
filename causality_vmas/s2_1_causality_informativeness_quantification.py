@@ -7,7 +7,7 @@ import pandas as pd
 import psutil
 from tqdm import tqdm
 
-from causality_vmas import LABEL_target_value, LABEL_predicted_value
+from causality_vmas import LABEL_target_value, LABEL_predicted_value, LABEL_grouped_features, LABEL_discrete_intervals
 from causality_vmas.causality_algos import CausalDiscovery, SingleCausalInference
 from causality_vmas.utils import (constraints_causal_graph, _navigation_approximation,
                                   plot_graph, extract_intervals_from_bn, inverse_approximation_function, bn_to_dict)
@@ -29,7 +29,8 @@ class CausalityInformativenessQuantification:
 
         target_feature = kwargs.get('target_feature', 'reward')
         self.cd_algo = kwargs.get('cd_algo', 'PC')
-        self.n_test_samples = kwargs.get('n_test_samples', 10000)
+        self.n_test_samples = kwargs.get('n_test_samples', 10000)-1
+        self.grouped_features = kwargs[LABEL_grouped_features]
 
         self.dict_bn = None
         self.discrete_intervals_bn = None
@@ -88,7 +89,7 @@ class CausalityInformativenessQuantification:
 
         total_cpus = os.cpu_count()
         cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = min(5, int(total_cpus / 2 * (1 - cpu_usage / 100)))
+        free_cpus = min(10, int(total_cpus / 2 * (1 - cpu_usage / 100)))
         n_workers = max(1, free_cpus)  # Ensure at least one worker is used
 
         df_test = self.df_target.loc[:min(self.n_test_samples, len(self.df_target)), :]
@@ -121,7 +122,8 @@ class CausalityInformativenessQuantification:
 
         if self.obs_train_to_test is not None:
             kwargs = {}
-            kwargs['discrete_intervals'] = self.discrete_intervals_bn
+            kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
+            kwargs[LABEL_grouped_features] = self.grouped_features
             obs = self.obs_train_to_test(input_obs, **kwargs)
         else:
             obs = input_obs

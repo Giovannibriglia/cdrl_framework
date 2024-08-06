@@ -7,29 +7,20 @@ simulation:
 
 scenario:
     navigation:
-        n_agents: 4
         shared_rew : False
         x_semidim: 0.5
         y_semidim: 0.5
-        # n_rays: 12
-        # wrapper: None
         continuous_actions: False
         seed: 42
 
     discovery:
+        continuous_actions: False
+        seed: 42
 
-    transport:
+    flocking:
+        continuous_actions: False
+        seed: 42
 
-features:
-    navigation:
-        features:
-            - feature1: "PosX"
-            - feature2: "PosY"
-            - feature3: "VelX"
-            - feature4: "VelY"
-            - feature5: "DistGX"
-            - feature6: "DistGY"
-        sensor_pattern: "ray_{n}"
-    discovery:
-
-    transport:
+    balance:
+        continuous_actions: False
+        seed: 42

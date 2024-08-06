@@ -5,12 +5,9 @@ import pandas as pd
 
 from causality_vmas import LABEL_approximation_parameters, LABEL_dataframe_approximated, \
     LABEL_ciq_scores, LABEL_dir_storing_dict_and_info, LABEL_discrete_intervals, LABEL_target_feature_analysis, \
-    LABEL_info_task
+    LABEL_info_task, LABEL_grouped_features
 from causality_vmas.s2_1_causality_informativeness_quantification import CausalityInformativenessQuantification
 from causality_vmas.utils import my_approximation, save_file_incrementally, save_json_incrementally, graph_to_list
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(processName)s - %(message)s')
 
 
 class SensitiveAnalysis:
@@ -32,8 +29,10 @@ class SensitiveAnalysis:
         df_approx = single_dict_approx[LABEL_dataframe_approximated]
         params_approximation = single_dict_approx[LABEL_approximation_parameters]
         discrete_intervals = single_dict_approx[LABEL_discrete_intervals]
+        grouped_features = single_dict_approx[LABEL_grouped_features]
 
-        kwargs = {'target_feature': self.target_feature}
+        kwargs = {LABEL_target_feature_analysis: self.target_feature,
+                  LABEL_grouped_features: grouped_features}
 
         ciq = CausalityInformativenessQuantification(self.task_name, df_approx, self.df_original, **kwargs)
         dict_scores, causal_graph, dict_bn_info = ciq.evaluate()
@@ -47,7 +46,8 @@ class SensitiveAnalysis:
             save_json_incrementally(params_approximation, self.dir_save, "approx_params_")
 
             others = {LABEL_discrete_intervals: discrete_intervals,
-                      LABEL_info_task: self.info_task
+                      LABEL_info_task: self.info_task,
+                      LABEL_grouped_features: grouped_features
                       }
             save_json_incrementally(others, self.dir_save, 'others_')
 
@@ -68,12 +68,11 @@ class SensitiveAnalysis:
         return self.dir_save
 
 
-def main():
-    task_name = 'navigation'
+def main(task_name):
 
     df = pd.read_pickle(f'./dataframes/df_{task_name}_pomdp_discrete_actions_0.pkl')
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
-    df = df.loc[:100001, agent0_columns]
+    df = df.loc[:10001, agent0_columns]
 
     with open(f'./dataframes/info_{task_name}_pomdp_discrete_actions_0.json', 'r') as file:
         info_task = json.load(file)
@@ -83,4 +82,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main('flocking')

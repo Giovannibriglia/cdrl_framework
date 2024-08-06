@@ -1,9 +1,15 @@
 
 navigation:
-      ROWS: [100000]
-      BINS: [25, 50]
-      RAYS: [1, 2, 3]
+      n_rows: [10000]
+      n_bins: [10]
+      n_rays: [1, 2]
 
 discovery:
-      N_AGENTS: [20, 40]
-      N_ROCKETS: [10, 20]
+      n_rows: [10000]
+      n_bins: [10]
+      n_rays: [1, 2]
+
+flocking:
+      n_rows: [10000]
+      n_bins: [10]
+      n_rays: [1, 2]

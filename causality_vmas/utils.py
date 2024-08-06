@@ -25,7 +25,7 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
 from causality_vmas import LABEL_kind_group_var, LABEL_value_group_var, LABEL_approximation_parameters, \
-    LABEL_dataframe_approximated, LABEL_discrete_intervals
+    LABEL_dataframe_approximated, LABEL_discrete_intervals, LABEL_grouped_features
 
 " ******************************************************************************************************************** "
 
@@ -415,7 +415,7 @@ def values_to_bins(values: List[float], intervals: List[float]) -> List[int]:
     return new_values
 
 
-def discretize_value(value, intervals):
+def discretize_value(value: int | float, intervals: List) -> int | float:
     idx = np.digitize(value, intervals, right=False)
     if idx == 0:
         return intervals[0]
@@ -428,7 +428,7 @@ def discretize_value(value, intervals):
             return intervals[idx]
 
 
-def _create_intervals(min_val, max_val, n_intervals, scale='linear'):
+def _create_intervals(min_val: int | float, max_val: int | float, n_intervals: int, scale='linear') -> List:
     if scale == 'exponential':
         # Generate n_intervals points using exponential scaling
         intervals = np.logspace(0, 1, n_intervals, base=10) - 1
@@ -438,10 +438,11 @@ def _create_intervals(min_val, max_val, n_intervals, scale='linear'):
         intervals = np.linspace(min_val, max_val, n_intervals)
     else:
         raise ValueError("Unsupported scale type. Use 'exponential' or 'linear'.")
-    return intervals
+
+    return list(intervals)
 
 
-def discretize_dataframe(df, n_bins=50, scale='linear', not_discretize_these: List = None):
+def discretize_dataframe(df: pd.DataFrame, n_bins: int = 50, scale='linear', not_discretize_these: List = None):
     discrete_df = df.copy()
     variable_discrete_intervals = {}
     for column in df.columns:
@@ -449,121 +450,201 @@ def discretize_dataframe(df, n_bins=50, scale='linear', not_discretize_these: Li
             min_value = df[column].min()
             max_value = df[column].max()
             intervals = _create_intervals(min_value, max_value, n_bins, scale)
-            variable_discrete_intervals[column] = intervals.tolist()
+            variable_discrete_intervals[column] = intervals
             discrete_df[column] = df[column].apply(lambda x: discretize_value(x, intervals))
             # discrete_df[column] = np.vectorize(lambda x: intervals[_discretize_value(x, intervals)])(df[column])
     return discrete_df, variable_discrete_intervals
 
 
-def group_variables(dataframe: pd.DataFrame, variable_to_group: str, N: int = 1) -> pd.DataFrame:
-    # TODO: servirebbe qualcosa di automatico
+def group_row_variables(obs: Dict | List, variable_columns: list, N: int = 1) -> Dict:
+    # Determine if the row is a list or a dictionary
+    if isinstance(obs, list):
+        row_dict = {i: obs[i] for i in variable_columns}
+        is_list = True
+    else:
+        row_dict = {col: obs[col] for col in variable_columns}
+        is_list = False
+
+    sorted_variables = sorted(row_dict.items(), key=lambda x: x[1], reverse=True)[:N]
+    obs_grouped = {} if not is_list else [None] * (N * 2)
+
+    for i in range(N):
+        if i < len(sorted_variables):
+            variable_name, variable_value = sorted_variables[i]
+            try:
+                variable_number = ''.join(filter(str.isdigit, str(variable_name)))
+                if not is_list:
+                    obs_grouped[f'{LABEL_kind_group_var}_{i}'] = int(variable_number)
+                    obs_grouped[f'{LABEL_value_group_var}_{i}'] = variable_value
+                else:
+                    obs_grouped[i * 2] = int(variable_number)
+                    obs_grouped[i * 2 + 1] = variable_value
+            except (IndexError, ValueError):
+                if not is_list:
+                    obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
+                    obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
+                else:
+                    obs_grouped[i * 2] = None
+                    obs_grouped[i * 2 + 1] = None
+        else:
+            if not is_list:
+                obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
+                obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
+            else:
+                obs_grouped[i * 2] = None
+                obs_grouped[i * 2 + 1] = None
+
+    return obs_grouped
+
+
+def group_df_variables(dataframe: pd.DataFrame, variable_to_group: str | list, N: int = 1) -> pd.DataFrame:
     first_key = LABEL_kind_group_var
     second_key = LABEL_value_group_var
 
     # Step 1: Identify columns to group
-    variable_columns = [col for col in dataframe.columns if variable_to_group in col]
+    if isinstance(variable_to_group, str):
+        variable_columns = [col for col in dataframe.columns if variable_to_group in col]
+    elif isinstance(variable_to_group, list):
+        variable_columns = [col for col in dataframe.columns if col in variable_to_group]
+    else:
+        raise ValueError('variable to group must be list or str')
 
     # Step 2: Create columns for the top N variables and their max values
     for i in range(N):
-        dataframe[f'{first_key}_{variable_to_group}_{i}'] = None
-        dataframe[f'{second_key}_{variable_to_group}_{i}'] = None
+        dataframe[f'{first_key}_{i}'] = None
+        dataframe[f'{second_key}_{i}'] = None
 
-    # Step 3: Determine top N variable values per row
-    for index, row in dataframe.iterrows():
-        sorted_variables = row[variable_columns].sort_values(ascending=False).index
-        for i in range(N):
-            if i < len(sorted_variables):
-                # Split and handle possible non-numeric values gracefully
-                try:
-                    variable_number = sorted_variables[i].split(variable_to_group)[1]
-                    variable_number = ''.join(filter(str.isdigit, variable_number))  # Keep only numeric characters
-                    dataframe.at[index, f'{first_key}_{variable_to_group}_{i}'] = int(variable_number)
-                    dataframe.at[index, f'{second_key}_{variable_to_group}_{i}'] = row[sorted_variables[i]]
-                except (IndexError, ValueError) as e:
-                    print(e)
-                    dataframe.at[index, f'{first_key}_{variable_to_group}_{i}'] = None
-                    dataframe.at[index, f'{second_key}_{variable_to_group}_{i}'] = None
-            else:
-                dataframe.at[index, f'{first_key}_{variable_to_group}_{i}'] = None
-                dataframe.at[index, f'{second_key}_{variable_to_group}_{i}'] = None
-
-    # Step 4: Discretize max value columns
+    # Step 3: Determine top N variable values per row using group_variables function
+    grouped_data = dataframe.apply(lambda row: group_row_variables(row, variable_columns, N), axis=1)
     for i in range(N):
-        max_col_name = f'{second_key}_{variable_to_group}_{i}'
-        new_col = dataframe[max_col_name]
-        min_value = new_col.min()
-        max_value = new_col.max()
-        intervals = _create_intervals(min_value, max_value, 4, 'linear')
-        dataframe[max_col_name] = new_col.apply(lambda x: discretize_value(x, intervals))
+        dataframe[f'{first_key}_{i}'] = grouped_data.apply(lambda x: x[f'{first_key}_{i}'])
+        dataframe[f'{second_key}_{i}'] = grouped_data.apply(lambda x: x[f'{second_key}_{i}'])
 
     # Step 5: Drop original variable columns if needed
     dataframe.drop(columns=variable_columns, inplace=True)
+
     return dataframe
 
 
 def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
     df, params = input_elements
-    n_bins = params.get('BINS', 20)
-    n_rays = params.get('RAYS', 1)
-    n_rows = params.get('ROWS', int(len(df) / 2))
 
-    agent0_columns = [col for col in df.columns if 'agent_0' in col]
-    df = df.loc[:, agent0_columns]
+    n_bins = params.get('n_bins', 20)
+    n_rays = params.get('n_rays', 1)
+    n_rows = params.get('n_rows', int(len(df) / 2))
 
-    not_discretize = [s for s in df.columns.to_list() if len(df[s].unique()) <= n_bins]
-    new_df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize)
-    new_df = group_variables(new_df, 'ray', n_rays)
-    new_df = new_df.loc[:n_rows - 1, :]  # new_df.sample(n_rows-1, random_state=42)
+    variables_to_group = df.columns.to_list()[6:-2]
+    df = group_df_variables(df, variables_to_group, n_rays)
+
+    not_discretize_these = [s for s in df.columns.to_list() if
+                            len(df[s].unique()) <= n_bins or
+                            LABEL_kind_group_var in s or
+                            'action' in s]
+
+    df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize_these)
+
+    new_df = df.loc[:n_rows - 1, :]
 
     for col in new_df.columns.to_list():
-        if len(new_df[col].unique()) > n_bins and 'kind' not in col:
+        if len(new_df[col].unique()) > n_bins and col not in not_discretize_these:
             print(
                 f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
 
     approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rays': n_rays, 'n_rows': n_rows},
                    LABEL_discrete_intervals: discrete_intervals,
-                   LABEL_dataframe_approximated: new_df}
+                   LABEL_dataframe_approximated: new_df,
+                   LABEL_grouped_features: (n_rays, variables_to_group)}
     return approx_dict
 
 
 def _navigation_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
-    intervals = kwargs['discrete_intervals']
-    features_bn = list(intervals.keys())
+    n_groups, features_group = kwargs[LABEL_grouped_features]  # 2, [obs4-ob5-...]
+    obs_grouped = group_row_variables(input_obs, features_group, n_groups)
 
-    n_rays = 0
-    for feat in features_bn:
-        if LABEL_kind_group_var in feat:
-            n_rays += 1
+    discrete_intervals = kwargs[LABEL_discrete_intervals]
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items()}
 
-    sensors_keys = [s for s in list(input_obs.keys()) if 'ray' in s]
+    return final_obs
 
-    kind_rays = [0] * n_rays
-    value_rays = [0.0] * n_rays
 
-    for key in sensors_keys:
-        for i in range(n_rays):
-            if f'ray_{i}' in key:
-                value = input_obs[key]
-                if value > value_rays[i]:
-                    value_rays[i] = value
-                    kind_rays[i] = 1
-                elif value == value_rays[i]:
-                    kind_rays[i] += 1
+def _discovery_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
+    df, params = input_elements
 
-    obs = {key: value for key, value in input_obs.items() if 'ray' not in key}
+    n_bins = params.get('n_bins', 20)
+    n_rays = params.get('n_rays', 1)
+    n_rows = params.get('n_rows', int(len(df) / 2))
+    print('**** VERIFICA FEATURES, 2 VOLTE POS?? *****')
+    variables_to_group = df.columns.to_list()[4:-2]
+    df = group_df_variables(df, variables_to_group, n_rays)
 
-    for i in range(n_rays):
-        obs[f'kind_ray_{i}'] = kind_rays[i]
-        obs[f'value_ray_{i}'] = value_rays[i]
+    not_discretize_these = [s for s in df.columns.to_list() if
+                            len(df[s].unique()) <= n_bins or
+                            LABEL_kind_group_var in s or
+                            'action' in s]
 
-    final_obs = {}
-    for key, value in obs.items():
-        if 'ray' not in key and 'agent_0' not in key:
-            final_obs[f'agent_0_{key}'] = value
-        else:
-            final_obs[key] = value
+    df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize_these)
 
-    final_obs = {key: discretize_value(value, intervals[key]) for key, value in final_obs.items()}
+    new_df = df.loc[:n_rows - 1, :]
+
+    for col in new_df.columns.to_list():
+        if len(new_df[col].unique()) > n_bins and col not in not_discretize_these:
+            print(
+                f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
+
+    approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rays': n_rays, 'n_rows': n_rows},
+                   LABEL_discrete_intervals: discrete_intervals,
+                   LABEL_dataframe_approximated: new_df,
+                   LABEL_grouped_features: (n_rays, variables_to_group)}
+    return approx_dict
+
+
+def _discovery_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
+    n_groups, features_group = kwargs[LABEL_grouped_features]  # 2, [obs4-ob5-...]
+    obs_grouped = group_row_variables(input_obs, features_group, n_groups)
+
+    discrete_intervals = kwargs[LABEL_discrete_intervals]
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items()}
+
+    return final_obs
+
+
+def _flocking_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
+    df, params = input_elements
+
+    n_bins = params.get('n_bins', 20)
+    n_rays = params.get('n_rays', 1)
+    n_rows = params.get('n_rows', int(len(df) / 2))
+
+    variables_to_group = df.columns.to_list()[6:-2]
+    df = group_df_variables(df, variables_to_group, n_rays)
+
+    not_discretize_these = [s for s in df.columns.to_list() if
+                            len(df[s].unique()) <= n_bins or
+                            LABEL_kind_group_var in s or
+                            'action' in s]
+
+    df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize_these)
+
+    new_df = df.loc[:n_rows - 1, :]
+
+    for col in new_df.columns.to_list():
+        if len(new_df[col].unique()) > n_bins and col not in not_discretize_these:
+            print(
+                f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
+
+    approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rays': n_rays, 'n_rows': n_rows},
+                   LABEL_discrete_intervals: discrete_intervals,
+                   LABEL_dataframe_approximated: new_df,
+                   LABEL_grouped_features: (n_rays, variables_to_group)}
+    return approx_dict
+
+
+def _flocking_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
+    n_groups, features_group = kwargs[LABEL_grouped_features]  # 2, [obs4-ob5-...]
+    obs_grouped = group_row_variables(input_obs, features_group, n_groups)
+
+    discrete_intervals = kwargs[LABEL_discrete_intervals]
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items()}
 
     return final_obs
 
@@ -571,6 +652,10 @@ def _navigation_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
 def inverse_approximation_function(task: str):
     if task == 'navigation':
         return _navigation_inverse_approximation
+    elif task == 'discovery':
+        return _discovery_inverse_approximation
+    elif task == 'flocking':
+        return _discovery_inverse_approximation
     # TODO: others
     else:
         raise NotImplementedError("The inverse approximation function for this task has not been implemented")
@@ -590,7 +675,14 @@ def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
 
         if task_name == 'navigation':
             approximator = _navigation_approximation
+        elif task_name == 'flocking':
+            approximator = _flocking_approximation
+        elif task_name == 'discovery':
+            approximator = _discovery_approximation
         # TODO: others
+        else:
+            raise NotImplementedError("The approximation function for this task has not been implemented")
+
         with multiprocessing.Pool(multiprocessing.cpu_count()) as pool:
             approximations = pool.map(approximator, all_params_list)
             gc.collect()

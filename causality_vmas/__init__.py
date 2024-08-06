@@ -9,6 +9,7 @@ LABEL_info_task = 'info_task'
 LABEL_ciq_scores = 'scores'
 LABEL_dataframe_approximated = 'new_df'
 LABEL_discrete_intervals = 'discrete_intervals'
+LABEL_grouped_features = 'grouped_features'
 
 LABEL_target_value = 'target'
 LABEL_predicted_value = 'pred'
