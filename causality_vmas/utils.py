@@ -7,7 +7,7 @@ import pickle
 import random
 import re
 from decimal import Decimal
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Union
 
 import networkx as nx
 import numpy as np
@@ -456,8 +456,9 @@ def discretize_dataframe(df: pd.DataFrame, n_bins: int = 50, scale='linear', not
     return discrete_df, variable_discrete_intervals
 
 
-def group_row_variables(obs: Dict | List, variable_columns: list, N: int = 1) -> Dict:
-    # Determine if the row is a list or a dictionary
+def group_row_variables(input_obs: Union[Dict, List], variable_columns: list, N: int = 1) -> Dict:
+    obs = input_obs.copy()
+
     if isinstance(obs, list):
         row_dict = {i: obs[i] for i in variable_columns}
         is_list = True
@@ -466,35 +467,36 @@ def group_row_variables(obs: Dict | List, variable_columns: list, N: int = 1) ->
         is_list = False
 
     sorted_variables = sorted(row_dict.items(), key=lambda x: x[1], reverse=True)[:N]
-    obs_grouped = {} if not is_list else [None] * (N * 2)
+    obs_grouped = {}
 
     for i in range(N):
         if i < len(sorted_variables):
             variable_name, variable_value = sorted_variables[i]
             try:
                 variable_number = ''.join(filter(str.isdigit, str(variable_name)))
+                obs_grouped[f'{LABEL_kind_group_var}_{i}'] = int(variable_number)
+                obs_grouped[f'{LABEL_value_group_var}_{i}'] = variable_value
+                # Remove the grouped part from the original observation
                 if not is_list:
-                    obs_grouped[f'{LABEL_kind_group_var}_{i}'] = int(variable_number)
-                    obs_grouped[f'{LABEL_value_group_var}_{i}'] = variable_value
+                    del obs[variable_name]
                 else:
-                    obs_grouped[i * 2] = int(variable_number)
-                    obs_grouped[i * 2 + 1] = variable_value
+                    obs[variable_columns[i]] = None
             except (IndexError, ValueError):
-                if not is_list:
-                    obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
-                    obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
-                else:
-                    obs_grouped[i * 2] = None
-                    obs_grouped[i * 2 + 1] = None
-        else:
-            if not is_list:
                 obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
                 obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
-            else:
-                obs_grouped[i * 2] = None
-                obs_grouped[i * 2 + 1] = None
+        else:
+            obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
+            obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
 
-    return obs_grouped
+    # Remove the variable_columns from the original observation
+    for col in variable_columns:
+        if col in obs:
+            del obs[col]
+
+    # Combine the remaining original observation and grouped parts
+    combined_obs = {**obs, **obs_grouped}
+
+    return combined_obs
 
 
 def group_df_variables(dataframe: pd.DataFrame, variable_to_group: str | list, N: int = 1) -> pd.DataFrame:
@@ -642,7 +644,6 @@ def _flocking_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
 def _flocking_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     n_groups, features_group = kwargs[LABEL_grouped_features]  # 2, [obs4-ob5-...]
     obs_grouped = group_row_variables(input_obs, features_group, n_groups)
-
     discrete_intervals = kwargs[LABEL_discrete_intervals]
     final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items()}
 
@@ -655,7 +656,7 @@ def inverse_approximation_function(task: str):
     elif task == 'discovery':
         return _discovery_inverse_approximation
     elif task == 'flocking':
-        return _discovery_inverse_approximation
+        return _flocking_inverse_approximation
     # TODO: others
     else:
         raise NotImplementedError("The inverse approximation function for this task has not been implemented")

@@ -2,7 +2,7 @@ import json
 import pandas as pd
 
 from causality_algos import CausalInferenceForRL
-from causality_vmas import LABEL_dir_storing_dict_and_info
+from causality_vmas import LABEL_dir_storing_dict_and_info, LABEL_grouped_features
 from causality_vmas.utils import list_to_graph, is_folder_empty, inverse_approximation_function
 
 
@@ -25,9 +25,14 @@ def main(task: str = 'navigation'):
         with open(f'{path_file}/best_bn_params.json', 'r') as file:
             bn_dict = json.load(file)
 
+        with open(f'{path_file}/best_others.json', 'r') as file:
+            others = json.load(file)
+
+        grouped_features = others[LABEL_grouped_features]
+
         if (dataframe is not None and causal_graph is not None) or bn_dict is not None:
             offline_ci = CausalInferenceForRL(False, dataframe, causal_graph, bn_dict,
-                                              None, df_test, obs_train_to_test)
+                                              None, df_test, obs_train_to_test, grouped_features)
             ct = offline_ci.create_causal_table(show_progress=True)
             ct.to_pickle(f'{path_file}/causal_table.pkl')
             ct.to_excel('mario.xlsx')
@@ -38,4 +43,4 @@ def main(task: str = 'navigation'):
 
 
 if __name__ == '__main__':
-    main()
+    main('flocking')

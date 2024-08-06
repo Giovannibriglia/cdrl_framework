@@ -1,7 +1,7 @@
 import itertools
 import random
 import re
-from typing import Dict
+from typing import Dict, Tuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import causalnex
 import networkx as nx
@@ -15,7 +15,7 @@ from pgmpy.inference.CausalInference import CausalInference
 from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm import tqdm
 
-from causality_vmas import LABEL_reward_action_values
+from causality_vmas import LABEL_reward_action_values, LABEL_discrete_intervals, LABEL_grouped_features
 from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn
 
 
@@ -305,8 +305,9 @@ class SingleCausalInference:
 
 
 class CausalInferenceForRL:
-    def __init__(self, online: bool, df_train: pd.DataFrame, causal_graph: nx.DiGraph, bn_dict: Dict = None,
-                 causal_table: pd.DataFrame = None, df_test: pd.DataFrame = None, obs_train_to_test=None):
+    def __init__(self, online: bool, df_train: pd.DataFrame, causal_graph: nx.DiGraph,
+                 bn_dict: Dict = None, causal_table: pd.DataFrame = None, df_test: pd.DataFrame = None,
+                 obs_train_to_test=None, grouped_features: Tuple = None):
         self.online = online
 
         self.df_train = df_train
@@ -319,6 +320,8 @@ class CausalInferenceForRL:
         self.ci = SingleCausalInference(df_train, causal_graph, bn_dict)
         cbn = self.ci.return_cbn()
         self.discrete_intervals_bn = extract_intervals_from_bn(cbn)
+
+        self.grouped_features = grouped_features
 
         self.reward_variable = [s for s in df_train.columns.to_list() if 'reward' in s][0]
         self.reward_values = self.df_train[self.reward_variable].unique().tolist()
@@ -372,7 +375,9 @@ class CausalInferenceForRL:
     def _compute_reward_action_values(self, input_obs: Dict) -> Dict:
         if self.obs_train_to_test is not None:
             kwargs = {}
-            kwargs['discrete_intervals'] = self.discrete_intervals_bn
+            kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
+            kwargs[LABEL_grouped_features] = self.grouped_features
+
             obs = self.obs_train_to_test(input_obs, **kwargs)
         else:
             obs = input_obs
@@ -385,8 +390,8 @@ class CausalInferenceForRL:
 
     def create_causal_table(self, show_progress: bool = False) -> pd.DataFrame:
         rows_causal_table = []
-        """print('only 100 rows')
-        self.df_test = self.df_test.loc[:100, :]"""
+        print('only 100 rows')
+        self.df_test = self.df_test.loc[:99, :]
 
         selected_columns = [s for s in self.df_test.columns.to_list() if
                             s != self.reward_variable and s != self.action_variable]
