@@ -15,6 +15,8 @@ discovery:
         2: "PosY"
         3: "VelX"
         4: "VelY"
+        5: error
+        6: errror
         others: "ray"
 
 flocking:

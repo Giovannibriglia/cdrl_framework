@@ -8,7 +8,7 @@ import random
 import re
 from decimal import Decimal
 from typing import Dict, Tuple, List, Union
-import logging
+import time
 
 import networkx as nx
 import numpy as np
@@ -199,106 +199,6 @@ def get_rl_knowledge(filepath, agent_id):
 
 " ******************************************************************************************************************** "
 
-"""def _rescale_value(kind: str, value: float | int, n_bins: int, x_semidim: float = None, y_semidim: float = None):
-    def discretize_value(value, intervals):
-        # Find the interval where the value fits
-        for i in range(len(intervals) - 1):
-            if intervals[i] <= value < intervals[i + 1]:
-                return (intervals[i] + intervals[i + 1]) / 2
-        # Handle the edge cases
-        if value < intervals[0]:
-            return intervals[0]
-        elif value >= intervals[-1]:
-            return intervals[-1]
-
-    def create_intervals(min_val, max_val, n_intervals, scale='linear'):
-        if scale == 'exponential':
-            # Generate n_intervals points using exponential scaling
-            intervals = np.logspace(0, 1, n_intervals, base=10) - 1
-            intervals = intervals / (10 - 1)  # Normalize to range 0-1
-            intervals = min_val + (max_val - min_val) * intervals
-        elif scale == 'linear':
-            intervals = np.linspace(min_val, max_val, n_intervals)
-        else:
-            raise ValueError("Unsupported scale type. Use 'exponential' or 'linear'.")
-        return intervals
-
-    if kind == 'reward':
-        max_value = 0.1
-        min_value = -1 * 4 - max(x_semidim, y_semidim)
-
-    elif kind == 'DX' or kind == 'DY':
-        if x_semidim is None and y_semidim is None:
-            return value
-        else:
-            max_value = x_semidim * 2 if kind == 'posX' else y_semidim * 2
-            min_value = -x_semidim * 2 if kind == 'posX' else -y_semidim * 2
-
-    elif kind == 'VX' or kind == 'VY':
-        max_value = 0.5
-        min_value = -0.5
-
-    elif kind == 'sensor':
-        max_value = 0.35
-        min_value = 0.0
-
-    elif kind == 'posX' or kind == 'posY':
-        if x_semidim is None and y_semidim is None:
-            return value
-        else:
-            max_value = x_semidim if kind == 'posX' else y_semidim
-            min_value = -x_semidim if kind == 'posX' else y_semidim
-
-    intervals = create_intervals(min_value, max_value, n_bins, scale='linear')
-
-    index = discretize_value(value, intervals)
-    rescaled_value = index
-
-    return rescaled_value
-
-
-def discretize_df(dataframe: pd.DataFrame, n_bins: int):
-
-    std_dev = dataframe.std()
-    non_zero_std_columns = std_dev[std_dev != 0].index
-
-    df_filtered = dataframe[non_zero_std_columns]
-
-    new_dataframe = pd.DataFrame(columns=df_filtered.columns, index=df_filtered.index)
-    for col in df_filtered.columns:
-        if 'action' not in col:
-            if 'DX' in col:
-                kind = 'DX'
-            elif 'DY' in col:
-                kind = 'DY'
-            elif 'reward' in col:
-                kind = 'reward'
-            elif 'PX' in col:
-                kind = 'posX'
-            elif 'PY' in col:
-                kind = 'posY'
-            elif 'VX' in col:
-                kind = 'VX'
-            elif 'VY' in col:
-                kind = 'VY'
-            elif 'sensor' in col:
-                kind = 'sensor'
-            else:
-                kind = None
-
-            if kind:
-                new_dataframe[col] = df_filtered[col].apply(
-                    lambda value: _rescale_value(kind, value, n_bins, x_semidim, y_semidim))
-            else:
-                new_dataframe[col] = df_filtered[col]
-        else:
-            new_dataframe[col] = df_filtered[col]
-
-    # print(new_dataframe['agent_0_next_DX'].std())
-    # new_dataframe = new_dataframe.loc[:, new_dataframe.std() != 0]
-   
-    return new_dataframe"""
-
 
 def get_df_boundaries(dataframe: pd.DataFrame):
     for col in dataframe.columns.to_list():
@@ -471,29 +371,30 @@ def group_row_variables(input_obs: Union[Dict, List], variable_columns: list, N:
     sorted_variables = sorted(row_dict.items(), key=lambda x: x[1], reverse=True)[:N]
     obs_grouped = {}
 
-    for i in range(N):
-        if i < len(sorted_variables):
-            variable_name, variable_value = sorted_variables[i]
-            try:
-                variable_number = ''.join(filter(str.isdigit, str(variable_name)))
-                obs_grouped[f'{LABEL_kind_group_var}_{i}'] = int(variable_number)
-                obs_grouped[f'{LABEL_value_group_var}_{i}'] = variable_value
-                # Remove the grouped part from the original observation
-                if not is_list:
-                    del obs[variable_name]
-                else:
-                    obs[variable_columns[i]] = None
-            except (IndexError, ValueError):
-                obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
-                obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
-        else:
+    for i, (variable_name, variable_value) in enumerate(sorted_variables):
+        try:
+            variable_number = ''.join(filter(str.isdigit, str(variable_name)))
+            obs_grouped[f'{LABEL_kind_group_var}_{i}'] = int(variable_number)
+            obs_grouped[f'{LABEL_value_group_var}_{i}'] = variable_value
+            # Remove the grouped part from the original observation
+            if not is_list:
+                del obs[variable_name]
+            else:
+                obs[variable_columns[i]] = None
+        except (IndexError, ValueError):
             obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
             obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
 
+    # Add empty groups if N is greater than the number of sorted variables
+    for i in range(len(sorted_variables), N):
+        obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
+        obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
+
     # Remove the variable_columns from the original observation
-    for col in variable_columns:
-        if col in obs:
-            del obs[col]
+    if not is_list:
+        for col in variable_columns:
+            if col in obs:
+                del obs[col]
 
     # Combine the remaining original observation and grouped parts
     combined_obs = {**obs, **obs_grouped}
@@ -564,7 +465,6 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
 def _navigation_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     n_groups, features_group = kwargs[LABEL_grouped_features]  # 2, [obs4-ob5-...]
     obs_grouped = group_row_variables(input_obs, features_group, n_groups)
-
     discrete_intervals = kwargs[LABEL_discrete_intervals]
     final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items()}
 
@@ -648,7 +548,6 @@ def _flocking_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     obs_grouped = group_row_variables(input_obs, features_group, n_groups)
     discrete_intervals = kwargs[LABEL_discrete_intervals]
     final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items()}
-
     return final_obs
 
 

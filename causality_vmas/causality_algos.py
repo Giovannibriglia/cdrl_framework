@@ -1,9 +1,13 @@
 import itertools
+import math
+import asyncio
 import random
 import re
-from typing import Dict, Tuple
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Dict, Tuple, Any
+from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
+import multiprocessing
 import causalnex
+import time
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -343,6 +347,20 @@ class CausalInferenceForRL:
 
         return reward_actions_values
 
+    def _single_query_helper(self, obs: Dict, reward_value) -> tuple[Any, dict]:
+        evidence = obs.copy()
+        evidence.update({f'{self.reward_variable}': reward_value})
+        self.check_values_in_states(self.ci.cbn.states, obs, evidence)
+        action_distribution = self.ci.infer(obs, self.action_variable, evidence)
+        return reward_value, action_distribution
+
+    def single_query_parallel(self, obs: Dict) -> Dict:
+        with multiprocessing.Pool() as pool:
+            results = pool.starmap(self._single_query_helper,
+                                   [(obs, reward_value) for reward_value in self.reward_values])
+        reward_actions_values = dict(results)
+        return reward_actions_values
+
     @staticmethod
     def check_values_in_states(known_states, observation, evidence):
         not_in_observation = {}
@@ -372,7 +390,7 @@ class CausalInferenceForRL:
         if not_in_evidence != {}:
             print("\nValues not in evidence: ", not_in_evidence)
 
-    def _compute_reward_action_values(self, input_obs: Dict) -> Dict:
+    def _compute_reward_action_values(self, input_obs: Dict, if_parallel: bool = False) -> Dict:
         if self.obs_train_to_test is not None:
             kwargs = {}
             kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
@@ -382,10 +400,14 @@ class CausalInferenceForRL:
         else:
             obs = input_obs
 
-        reward_action_values = self.single_query(obs)
+        if if_parallel:
+            reward_action_values = self.single_query_parallel(obs)
+        else:
+            reward_action_values = self.single_query(obs)
 
         row_result = obs.copy()
         row_result[f'{LABEL_reward_action_values}'] = reward_action_values
+
         return row_result
 
     def create_causal_table(self, show_progress: bool = False) -> pd.DataFrame:
@@ -399,7 +421,7 @@ class CausalInferenceForRL:
         selected_df = self.df_test.loc[:, selected_columns]
         tasks = [row.to_dict() for n, row in selected_df.iterrows()]
 
-        with ProcessPoolExecutor() as executor:
+        with ProcessPoolExecutor(max_workers=100) as executor:
             futures = [executor.submit(self._compute_reward_action_values, task) for task in tasks]
             if show_progress:
                 for future in tqdm(as_completed(futures), total=len(futures),
@@ -413,9 +435,9 @@ class CausalInferenceForRL:
 
         return causal_table
 
-    def return_reward_action_values(self, obs: Dict) -> Dict:
+    def return_reward_action_values(self, obs: Dict, if_parallel: bool = False) -> Dict:
         if self.online:
-            dict_input_and_rav = self._compute_reward_action_values(obs)
+            dict_input_and_rav = self._compute_reward_action_values(obs, if_parallel=if_parallel)
             reward_action_values = dict_input_and_rav[LABEL_reward_action_values]
         else:
             if self.causal_table is None:
@@ -428,5 +450,3 @@ class CausalInferenceForRL:
             reward_action_values = filtered_df[LABEL_reward_action_values].to_dict()
 
         return reward_action_values
-
-
