@@ -10,6 +10,7 @@ from matplotlib import pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from tqdm import tqdm
+import logging
 
 from causality_vmas import (LABEL_ciq_scores, LABEL_binary_metrics, LABEL_distance_metrics, LABEL_target_value,
                             LABEL_predicted_value, LABEL_target_feature_analysis, LABEL_discrete_intervals,
@@ -19,7 +20,10 @@ from causality_vmas.causality_algos import CausalDiscovery
 from causality_vmas.utils import values_to_bins, get_numeric_part, get_ClusteringCoefficientSimilarity, \
     get_DegreeDistributionSimilarity, get_FrobeniusNorm, get_JaccardSimilarity, get_StructuralInterventionDistance, \
     get_StructuralHammingDistance, get_MeanAbsoluteError, get_MeanSquaredError, get_RootMeanSquaredError, \
-    get_MedianAbsoluteError, list_to_graph, get_fully_connected_graph, get_empty_graph
+    get_MedianAbsoluteError, list_to_graph, get_fully_connected_graph, get_empty_graph, process_singularities, \
+    _create_intervals
+
+logging.basicConfig(level=logging.INFO, format='%(processName)s - %(message)s')
 
 
 class BestApprox:
@@ -32,9 +36,21 @@ class BestApprox:
             elif isinstance(target, list):
                 self.G_target = list_to_graph(target)
             elif isinstance(target, pd.DataFrame):
-                cd = CausalDiscovery(target)
-                cd.training()
-                self.G_target = cd.return_causal_graph()
+                try:
+                    cd = CausalDiscovery(target)
+                    logging.info('Causal discovery...')
+                    cd.training(show_progress=True)
+                    self.G_target = cd.return_causal_graph()
+                except ValueError as e:
+                    if 'Data correlation matrix is singular' in str(e):
+                        logging.error("Singular matrix error encountered. Preprocessing data and retrying.")
+                        preprocessed_data = process_singularities(target)
+                        cd = CausalDiscovery(preprocessed_data)
+                        logging.info('Causal discovery...')
+                        cd.training(show_progress=True)
+                        self.G_target = cd.return_causal_graph()
+                    else:
+                        raise e
             else:
                 raise ValueError('the target variable provided is not supported')
 
@@ -49,6 +65,7 @@ class BestApprox:
         os.makedirs(self.dir_save_best, exist_ok=True)
         self.dict_metrics = {}
 
+        logging.info('Reading files...')
         self.all_scores = self._extract_json_results()
 
     def _setup_binary_metrics(self):
@@ -174,7 +191,15 @@ class BestApprox:
             with open(f'{self.path_results}/others_{index_res}.json', 'r') as file:
                 others = json.load(file)
 
-            intervals_target_feature = others[LABEL_discrete_intervals][target_feature]
+            if target_feature in others[LABEL_discrete_intervals].keys():
+                intervals_target_feature = others[LABEL_discrete_intervals][target_feature]
+            else:
+                df = pd.read_pickle(f'{self.path_results}/df_{index_res}.pkl')
+                target_feature_series = df[target_feature]
+                max_val_target_feature = target_feature_series.max()
+                min_val_target_feature = target_feature_series.min()
+                n_intervals = len(target_feature_series.unique())
+                intervals_target_feature = _create_intervals(min_val_target_feature, max_val_target_feature, n_intervals)
 
             max_distance_error = len(intervals_target_feature)
             self._setup_distance_metrics(max_distance_error)
@@ -279,7 +304,7 @@ class BestApprox:
         else:
             return -1
 
-    def _get_most_informative_keys(self, metric_category: str):
+    def _get_most_informative_keys(self, metric_category: str) -> List:
         df = self.df_metrics.copy()
 
         scores_features = [col for col in df.columns if f'mean_{metric_category}_metric' in col]
@@ -302,7 +327,8 @@ class BestApprox:
             'Importance': importances
         }).sort_values(by='Importance', ascending=False)
 
-        top_2_features = feature_importances.head(2)['Feature'].tolist()
+        top_2_features = sorted(feature_importances.head(2)['Feature'].tolist())
+
         return top_2_features
 
 
@@ -319,4 +345,4 @@ def main(task):
 
 
 if __name__ == '__main__':
-    main('flocking')
+    main('discovery')

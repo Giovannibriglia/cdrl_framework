@@ -8,6 +8,7 @@ import random
 import re
 from decimal import Decimal
 from typing import Dict, Tuple, List, Union
+import logging
 
 import networkx as nx
 import numpy as np
@@ -21,6 +22,7 @@ from pgmpy.models import BayesianNetwork
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from scipy.spatial.distance import squareform
 from scipy.stats import ks_2samp
+from sklearn.decomposition import PCA
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
@@ -1138,3 +1140,65 @@ def get_empty_graph(G_input: nx.DiGraph) -> nx.DiGraph:
     empty_graph.add_nodes_from(G_input.nodes())
 
     return empty_graph
+
+
+" ******************************************************************************************************************* "
+
+
+def process_singularities(data):
+    """
+    Preprocess the data to remove collinear variables and reduce dimensions if necessary.
+
+    Parameters:
+    data (pd.DataFrame): The input data as a Pandas DataFrame.
+
+    Returns:
+    pd.DataFrame: The preprocessed data.
+    """
+
+    def plot_correlation_matrix(data):
+        corr_matrix = data.corr()
+        plt.figure(figsize=(12, 8))
+        sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt=".2f")
+        plt.title("Correlation Matrix")
+        plt.show()
+        return corr_matrix
+
+    def identify_collinear_vars(corr_matrix):
+        collinear_vars = [(corr_matrix.columns[i], corr_matrix.columns[j])
+                          for i in range(corr_matrix.shape[0])
+                          for j in range(i + 1, corr_matrix.shape[1])
+                          if corr_matrix.iloc[i, j] == 1]
+        return collinear_vars
+
+    def remove_collinear_vars(data, collinear_vars):
+        for var_pair in collinear_vars:
+            if var_pair[1] in data.columns:
+                data = data.drop(columns=[var_pair[1]])
+        return data
+
+    def apply_pca_if_needed(data):
+        num_rows, num_columns = data.shape
+        if num_columns >= num_rows:
+            print("Warning: The number of variables is greater than or equal to the number of observations.")
+            pca = PCA(n_components=min(num_rows, num_columns) - 1)
+            reduced_data = pca.fit_transform(data)
+            data = pd.DataFrame(reduced_data, columns=[f"PC{i + 1}" for i in range(reduced_data.shape[1])])
+            print("Data shape after PCA:", data.shape)
+        return data
+
+    # Plot correlation matrix and identify collinear variables
+    corr_matrix = plot_correlation_matrix(data)
+    collinear_vars = identify_collinear_vars(corr_matrix)
+    print("Perfectly collinear variables:", collinear_vars)
+
+    # Remove collinear variables
+    data = remove_collinear_vars(data, collinear_vars)
+    print("Data shape after removing collinear variables:", data.shape)
+
+    # Apply PCA if needed
+    data = apply_pca_if_needed(data)
+
+    plot_correlation_matrix(data)
+
+    return data
