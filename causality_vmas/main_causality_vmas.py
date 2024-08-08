@@ -59,4 +59,5 @@ def main(task_name: str):
 
 
 if __name__ == '__main__':
-    main('discovery')
+    task = str(input('Select task: '))
+    main(task)

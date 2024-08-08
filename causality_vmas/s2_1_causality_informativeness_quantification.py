@@ -89,7 +89,7 @@ class CausalityInformativenessQuantification:
 
         total_cpus = os.cpu_count()
         cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = min(10, int(total_cpus / 2 * (1 - cpu_usage / 100)))
+        free_cpus = min(10, int(total_cpus * (1 - cpu_usage / 100)))
         n_workers = max(1, free_cpus)  # Ensure at least one worker is used
 
         df_test = self.df_target.loc[:min(self.n_test_samples, len(self.df_target)), :]
@@ -98,7 +98,7 @@ class CausalityInformativenessQuantification:
 
         logging.info(f'Starting causal inference assessment with {n_workers} workers...')
         try:
-            with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            with ProcessPoolExecutor(max_workers=60) as executor:
                 futures = [executor.submit(self._process_row, task) for task in tasks]
                 if show_progress:
                     for future in tqdm(as_completed(futures), total=len(futures), desc=f'Inferring causal knowledge...'):

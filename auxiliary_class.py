@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Tuple
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -14,16 +14,16 @@ from causality_vmas.utils import list_to_graph, inverse_approximation_function
 online = True
 
 
-# TODO: info selections inside the class: the input is only the task and kwargs
-
 class CausalActionsFilter:
-    def __init__(self, online: bool,
-                 causal_table: pd.DataFrame = None, df: pd.DataFrame = None,
-                 causal_graph: nx.DiGraph = None, dict_bn: Dict = None, obs_train_to_test=None,
-                 grouped_features: List = None):
+    def __init__(self, online: bool, task: str, **kwargs):
         self.online = online
 
-        self.ci = CausalInferenceForRL(self.online, df, causal_graph, dict_bn, causal_table,
+        self.task = task
+        self.path_best = f'./causality_vmas/results_sensitive_analysis_{self.task}/best'
+
+        df_train, causal_graph, dict_bn, causal_table, obs_train_to_test, grouped_features = self.get_task_items()
+
+        self.ci = CausalInferenceForRL(self.online, df_train, causal_graph, dict_bn, causal_table,
                                        obs_train_to_test=obs_train_to_test, grouped_features=grouped_features)
         self.last_obs_continuous = None
 
@@ -84,6 +84,26 @@ class CausalActionsFilter:
 
             # Since we can't return a tensor of varying lengths directly, return the list of tensors
             return actions_list"""
+
+    def get_task_items(self) -> Tuple:
+        df_train = pd.read_pickle(f'{self.path_best}/best_df.pkl')
+
+        with open(f'{self.path_best}/best_causal_graph.json', 'r') as file:
+            list_causal_graph = json.load(file)
+        causal_graph = list_to_graph(list_causal_graph)
+
+        with open(f'{self.path_best}/best_bn_params.json', 'r') as file:
+            dict_bn = json.load(file)
+
+        causal_table = pd.read_pickle(f'{self.path_best}/causal_table.pkl')
+
+        obs_train_to_test = inverse_approximation_function(self.task)
+
+        with open(f'{self.path_best}/best_others.json', 'r') as file:
+            others = json.load(file)
+        grouped_features = others[LABEL_grouped_features]
+
+        return df_train, causal_graph, dict_bn, causal_table, obs_train_to_test, grouped_features
 
     def get_actions(self, multiple_observation: Union[List, torch.Tensor]) -> Union[List, torch.Tensor]:
         def validate_input(observation):
@@ -296,26 +316,8 @@ class CausalActionsFilter:
 
 
 def main(task='navigation'):
-    path_best = f'./causality_vmas/results_sensitive_analysis_{task}/best'
 
-    df = pd.read_pickle(f'{path_best}/best_df.pkl')
-
-    with open(f'{path_best}/best_causal_graph.json', 'r') as file:
-        list_causal_graph = json.load(file)
-    causal_graph = list_to_graph(list_causal_graph)
-    with open(f'{path_best}/best_bn_params.json', 'r') as file:
-        dict_bn = json.load(file)
-    with open(f'{path_best}/best_others.json', 'r') as file:
-        others = json.load(file)
-
-    grouped_features = others[LABEL_grouped_features]
-
-    causal_table = pd.read_pickle(f'{path_best}/causal_table.pkl')
-
-    obs_train_to_test = inverse_approximation_function(task)
-
-    cd_actions_filter = CausalActionsFilter(online, causal_table,
-                                            df, causal_graph, dict_bn, obs_train_to_test, grouped_features)
+    cd_actions_filter = CausalActionsFilter(online, task)
 
     df_test = pd.read_pickle('./causality_vmas/dataframes/df_navigation_pomdp_discrete_actions_0.pkl')
     agent0_columns = [col for col in df_test.columns if
@@ -329,7 +331,7 @@ def main(task='navigation'):
         input_row = torch.tensor(row.values)
         input_row = input_row.unsqueeze(0).unsqueeze(0)  # Adds two dimensions of size 1
         # Repeat the tensor to obtain a size of 10, 3, 18
-        input_row_repeated = input_row.repeat(10, 10, 1)
+        input_row_repeated = input_row.repeat(10, 3, 1)
         in_time = time.time()
         cd_actions_filter.get_actions(input_row_repeated)
         print('Single timestep: computation time for action mask : ', time.time() - in_time)

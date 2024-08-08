@@ -1,13 +1,10 @@
 import itertools
-import math
-import asyncio
 import random
 import re
 from typing import Dict, Tuple, Any
-from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 import causalnex
-import time
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -152,7 +149,7 @@ class CausalDiscovery:
         print('Start causality assessment...')
 
         if show_progress:
-            pbar = tqdm(graph.nodes, desc=f'{self.env_name} nodes')
+            pbar = tqdm(graph.nodes, desc=f'nodes')
         else:
             pbar = graph.nodes
         for node in pbar:
@@ -412,8 +409,8 @@ class CausalInferenceForRL:
 
     def create_causal_table(self, show_progress: bool = False) -> pd.DataFrame:
         rows_causal_table = []
-        print('only 100 rows')
-        self.df_test = self.df_test.loc[:99, :]
+        """print('only 100 rows')
+        self.df_test = self.df_test.loc[:99, :]"""
 
         selected_columns = [s for s in self.df_test.columns.to_list() if
                             s != self.reward_variable and s != self.action_variable]
@@ -421,7 +418,7 @@ class CausalInferenceForRL:
         selected_df = self.df_test.loc[:, selected_columns]
         tasks = [row.to_dict() for n, row in selected_df.iterrows()]
 
-        with ProcessPoolExecutor(max_workers=100) as executor:
+        with ProcessPoolExecutor(max_workers=60) as executor:
             futures = [executor.submit(self._compute_reward_action_values, task) for task in tasks]
             if show_progress:
                 for future in tqdm(as_completed(futures), total=len(futures),
