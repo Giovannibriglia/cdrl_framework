@@ -38,8 +38,6 @@ class SensitiveAnalysis:
         dict_scores, causal_graph, dict_bn_info = ciq.evaluate()
 
         if not (dict_scores is None or causal_graph is None or dict_bn_info is None):
-            save_file_incrementally(df_approx, self.dir_save, 'df_', 'pkl')
-
             list_causal_graph = graph_to_list(causal_graph)
             save_json_incrementally(list_causal_graph, self.dir_save, "causal_graph_")
             save_json_incrementally(dict_bn_info, self.dir_save, "bn_params_")

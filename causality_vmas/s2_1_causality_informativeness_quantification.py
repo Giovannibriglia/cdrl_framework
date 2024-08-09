@@ -89,7 +89,7 @@ class CausalityInformativenessQuantification:
 
         total_cpus = os.cpu_count()
         cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = min(10, int(total_cpus * (1 - cpu_usage / 100)))
+        free_cpus = min(10, int(total_cpus*0.7 * (1 - cpu_usage / 100)))
         n_workers = max(1, free_cpus)  # Ensure at least one worker is used
 
         df_test = self.df_target.loc[:min(self.n_test_samples, len(self.df_target)), :]

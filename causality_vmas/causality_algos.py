@@ -15,9 +15,12 @@ from pgmpy.estimators import MaximumLikelihoodEstimator
 from pgmpy.inference.CausalInference import CausalInference
 from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm import tqdm
+import warnings
 
 from causality_vmas import LABEL_reward_action_values, LABEL_discrete_intervals, LABEL_grouped_features
 from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn
+
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="pgmpy.factors.discrete")
 
 
 class CausalDiscovery:
@@ -327,6 +330,7 @@ class CausalInferenceForRL:
         self.reward_variable = [s for s in df_train.columns.to_list() if 'reward' in s][0]
         self.reward_values = self.df_train[self.reward_variable].unique().tolist()
         self.action_variable = [s for s in df_train.columns.to_list() if 'action' in s][0]
+        self.action_values = self.df_train[self.action_variable].unique().tolist()
 
         self.causal_table = causal_table
 
@@ -387,16 +391,7 @@ class CausalInferenceForRL:
         if not_in_evidence != {}:
             print("\nValues not in evidence: ", not_in_evidence)
 
-    def _compute_reward_action_values(self, input_obs: Dict, if_parallel: bool = False) -> Dict:
-        if self.obs_train_to_test is not None:
-            kwargs = {}
-            kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
-            kwargs[LABEL_grouped_features] = self.grouped_features
-
-            obs = self.obs_train_to_test(input_obs, **kwargs)
-        else:
-            obs = input_obs
-
+    def _compute_reward_action_values(self, obs: Dict, if_parallel: bool = False) -> Dict:
         if if_parallel:
             reward_action_values = self.single_query_parallel(obs)
         else:
@@ -432,7 +427,16 @@ class CausalInferenceForRL:
 
         return causal_table
 
-    def return_reward_action_values(self, obs: Dict, if_parallel: bool = False) -> Dict:
+    def return_reward_action_values(self, input_obs: Dict, if_parallel: bool = False) -> Dict:
+        if self.obs_train_to_test is not None:
+            kwargs = {}
+            kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
+            kwargs[LABEL_grouped_features] = self.grouped_features
+
+            obs = self.obs_train_to_test(input_obs, **kwargs)
+        else:
+            obs = input_obs
+
         if self.online:
             dict_input_and_rav = self._compute_reward_action_values(obs, if_parallel=if_parallel)
             reward_action_values = dict_input_and_rav[LABEL_reward_action_values]
@@ -445,5 +449,9 @@ class CausalInferenceForRL:
                 filtered_df = filtered_df[filtered_df[feature] == value]
 
             reward_action_values = filtered_df[LABEL_reward_action_values].to_dict()
+
+            if reward_action_values == {}:
+                reward_action_values = {reward_value: {action_value: np.nan for action_value in self.action_values}
+                                        for reward_value in self.reward_values}
 
         return reward_action_values
