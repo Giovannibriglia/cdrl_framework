@@ -6,8 +6,8 @@ from causality_vmas import LABEL_dir_storing_dict_and_info, LABEL_grouped_featur
 from causality_vmas.utils import list_to_graph, is_folder_empty, inverse_approximation_function
 
 
-def main(task: str = 'navigation'):
-    df_test = pd.read_pickle('./dataframes/df_navigation_pomdp_discrete_actions_0.pkl')
+def main(task: str):
+    df_test = pd.read_pickle(f'./dataframes/df_{task}_pomdp_discrete_actions_0.pkl')
     agent0_columns = [col for col in df_test.columns if 'agent_0' in col]
     df_test = df_test.loc[:, agent0_columns]
 
@@ -31,8 +31,9 @@ def main(task: str = 'navigation'):
         grouped_features = others[LABEL_grouped_features]
 
         if (dataframe is not None and causal_graph is not None) or bn_dict is not None:
-            offline_ci = CausalInferenceForRL(False, dataframe, causal_graph, bn_dict,
-                                              None, df_test, obs_train_to_test, grouped_features)
+            offline_ci = CausalInferenceForRL(online=True, df_train=dataframe, causal_graph=causal_graph, bn_dict=bn_dict,
+                                              causal_table=None, df_test=df_test, obs_train_to_test=obs_train_to_test,
+                                              grouped_features=grouped_features)
             ct = offline_ci.create_causal_table(show_progress=True)
             ct.to_pickle(f'{path_file}/causal_table.pkl')
             ct.to_excel('mario.xlsx')

@@ -1,6 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Union, Tuple
-import networkx as nx
+import os
 import numpy as np
 import pandas as pd
 import json
@@ -35,7 +35,10 @@ class CausalActionsFilter:
         with open(f'{self.path_best}/best_bn_params.json', 'r') as file:
             dict_bn = json.load(file)
 
-        causal_table = pd.read_pickle(f'{self.path_best}/causal_table.pkl')
+        if os.path.exists(f'{self.path_best}/causal_table.pkl'):
+            causal_table = pd.read_pickle(f'{self.path_best}/causal_table.pkl')
+        else:
+            causal_table = None
 
         obs_train_to_test = inverse_approximation_function(self.task)
 
@@ -51,8 +54,9 @@ class CausalActionsFilter:
         else:
             n = 1
 
-        self.ci_agents = [CausalInferenceForRL(self.online, self.df_train, self.causal_graph, self.dict_bn,
-                                               self.causal_table, obs_train_to_test=self.obs_train_to_test,
+        self.ci_agents = [CausalInferenceForRL(online=self.online, df_train=self.df_train, causal_graph=self.causal_graph,
+                                               bn_dict=self.dict_bn, causal_table=self.causal_table,
+                                               obs_train_to_test=self.obs_train_to_test,
                                                grouped_features=self.grouped_features) for _ in range(n)]
 
     def get_actions(self, multiple_observation: Union[List, torch.Tensor]) -> Union[List, torch.Tensor]:
@@ -81,7 +85,8 @@ class CausalActionsFilter:
             if self.last_obs_continuous[env_idx][agent_idx] is not None:
                 delta_obs_continuous = calculate_delta_obs_continuous(current_obs_continuous,
                                                                       self.last_obs_continuous[env_idx][agent_idx])
-                reward_action_values = causal_inference_agent.return_reward_action_values(delta_obs_continuous, if_parallel=False)
+                reward_action_values = causal_inference_agent.return_reward_action_values(delta_obs_continuous,
+                                                                                          if_parallel=False)
                 action_reward_scores = self._weight_actions_rewards(reward_action_values)
                 actions_to_discard = self._actions_mask_filter(action_reward_scores)
             self.last_obs_continuous[env_idx][agent_idx] = current_obs_continuous
@@ -164,8 +169,8 @@ class CausalActionsFilter:
         return actions_mask
 
 
-def main(task='navigation'):
-    online = False
+def main(task: str):
+    online = True
     cd_actions_filter = CausalActionsFilter(online, task, parallel=False)
 
     df_test = pd.read_pickle(f'./causality_vmas/dataframes/df_{task}_pomdp_discrete_actions_0.pkl')
@@ -187,4 +192,4 @@ def main(task='navigation'):
 
 
 if __name__ == '__main__':
-    main('navigation')
+    main('flocking')

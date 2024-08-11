@@ -1,6 +1,7 @@
 import itertools
 import random
 import re
+import os
 from typing import Dict, Tuple, Any
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
@@ -8,6 +9,7 @@ import causalnex
 import networkx as nx
 import numpy as np
 import pandas as pd
+import psutil
 from causallearn.search.ConstraintBased.PC import pc
 from causalnex.inference import InferenceEngine
 from causalnex.structure.pytorch import from_pandas
@@ -16,11 +18,15 @@ from pgmpy.inference.CausalInference import CausalInference
 from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm import tqdm
 import warnings
+import logging
 
 from causality_vmas import LABEL_reward_action_values, LABEL_discrete_intervals, LABEL_grouped_features
 from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pgmpy.factors.discrete")
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(processName)s - %(message)s')
 
 
 class CausalDiscovery:
@@ -318,7 +324,7 @@ class CausalInferenceForRL:
         self.causal_graph = causal_graph
         self.dict_bn = bn_dict
 
-        self.df_test = df_test
+        self.df_test = df_test if df_test is not None else df_train
         self.obs_train_to_test = obs_train_to_test
 
         self.ci = SingleCausalInference(df_train, causal_graph, bn_dict)
@@ -391,7 +397,16 @@ class CausalInferenceForRL:
         if not_in_evidence != {}:
             print("\nValues not in evidence: ", not_in_evidence)
 
-    def _compute_reward_action_values(self, obs: Dict, if_parallel: bool = False) -> Dict:
+    def _compute_reward_action_values(self, input_obs: Dict, if_parallel: bool = False) -> Dict:
+        if self.obs_train_to_test is not None:
+            kwargs = {}
+            kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
+            kwargs[LABEL_grouped_features] = self.grouped_features
+
+            obs = self.obs_train_to_test(input_obs, **kwargs)
+        else:
+            obs = input_obs
+
         if if_parallel:
             reward_action_values = self.single_query_parallel(obs)
         else:
@@ -413,8 +428,14 @@ class CausalInferenceForRL:
         selected_df = self.df_test.loc[:, selected_columns]
         tasks = [row.to_dict() for n, row in selected_df.iterrows()]
 
-        with ProcessPoolExecutor(max_workers=60) as executor:
-            futures = [executor.submit(self._compute_reward_action_values, task) for task in tasks]
+        total_cpus = os.cpu_count()
+        cpu_usage = psutil.cpu_percent(interval=1)
+        free_cpus = min(10, int(total_cpus*0.5 * (1 - cpu_usage / 100)))
+        n_workers = max(1, free_cpus)
+
+        logging.info(f'Creating causal table with {n_workers} workers...')
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            futures = [executor.submit(self._compute_reward_action_values, task, False) for task in tasks]
             if show_progress:
                 for future in tqdm(as_completed(futures), total=len(futures),
                                    desc=f'Inferring causal knowledge...'):
@@ -428,21 +449,21 @@ class CausalInferenceForRL:
         return causal_table
 
     def return_reward_action_values(self, input_obs: Dict, if_parallel: bool = False) -> Dict:
-        if self.obs_train_to_test is not None:
-            kwargs = {}
-            kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
-            kwargs[LABEL_grouped_features] = self.grouped_features
-
-            obs = self.obs_train_to_test(input_obs, **kwargs)
-        else:
-            obs = input_obs
-
         if self.online:
-            dict_input_and_rav = self._compute_reward_action_values(obs, if_parallel=if_parallel)
+            dict_input_and_rav = self._compute_reward_action_values(input_obs, if_parallel=if_parallel)
             reward_action_values = dict_input_and_rav[LABEL_reward_action_values]
         else:
             if self.causal_table is None:
                 self.causal_table = self.create_causal_table(show_progress=True)
+
+            if self.obs_train_to_test is not None:
+                kwargs = {}
+                kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
+                kwargs[LABEL_grouped_features] = self.grouped_features
+
+                obs = self.obs_train_to_test(input_obs, **kwargs)
+            else:
+                obs = input_obs
 
             filtered_df = self.causal_table.copy()
             for feature, value in obs.items():
