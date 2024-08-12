@@ -36,7 +36,7 @@ class SensitiveAnalysis:
 
         save_file_incrementally(df_approx, self.dir_save, 'df_', 'pkl')
 
-        """ciq = CausalityInformativenessQuantification(self.task_name, df_approx, self.df_original, **kwargs)
+        ciq = CausalityInformativenessQuantification(self.task_name, df_approx, self.df_original, **kwargs)
         dict_scores, causal_graph, dict_bn_info = ciq.evaluate()
 
         if not (dict_scores is None or causal_graph is None or dict_bn_info is None):
@@ -57,7 +57,7 @@ class SensitiveAnalysis:
 
             logging.info(f'Results computed and saved for {params_approximation} approximation')
         else:
-            logging.error(f'No best found')"""
+            logging.error(f'No items to save')
 
     def computing_CIQs(self) -> str:
         list_dict_approx = self._compute_df_approximations()

@@ -13,8 +13,8 @@ from causality_vmas.utils import list_to_graph, is_folder_empty, inverse_approxi
 def main(task_name: str):
     task_name = task_name.lower()
     print('Task: ', task_name)
-    """experiment = VMASExperiment(task_name)
-    df_start, info_task, _ = experiment.run_experiment()"""
+    experiment = VMASExperiment(task_name)
+    df_start, info_task, _ = experiment.run_experiment()
 
     df_start = pd.read_pickle(f'./dataframes/df_{task}_pomdp_discrete_actions_0.pkl')
     with open(f'./dataframes/info_{task}_pomdp_discrete_actions_0.json', 'r') as file:
