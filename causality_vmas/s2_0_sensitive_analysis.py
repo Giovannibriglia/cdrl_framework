@@ -34,7 +34,7 @@ class SensitiveAnalysis:
         kwargs = {LABEL_target_feature_analysis: self.target_feature,
                   LABEL_grouped_features: grouped_features}
 
-        save_file_incrementally(df_approx, self.dir_save, 'df_', '.pkl')
+        save_file_incrementally(df_approx, self.dir_save, 'df_', 'pkl')
 
         """ciq = CausalityInformativenessQuantification(self.task_name, df_approx, self.df_original, **kwargs)
         dict_scores, causal_graph, dict_bn_info = ciq.evaluate()
