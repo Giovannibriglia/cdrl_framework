@@ -23,8 +23,10 @@ def main(task_name: str):
     agent0_columns = [col for col in df_start.columns if 'agent_0' in col]
     df_start = df_start.loc[:, agent0_columns]
 
-    sensitive_analysis = SensitiveAnalysis(df_start, task_name, info_task)
-    path_results = sensitive_analysis.computing_CIQs()
+    """sensitive_analysis = SensitiveAnalysis(df_start, task_name, info_task)
+    path_results = sensitive_analysis.computing_CIQs()"""
+
+    path_results = f'./results_sensitive_analysis_{task_name}'
 
     best_approx = BestApprox(path_results, df_start)
     best_approx.evaluate()
