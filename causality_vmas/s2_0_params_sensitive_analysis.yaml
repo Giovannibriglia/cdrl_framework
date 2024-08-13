@@ -2,7 +2,7 @@
 navigation:
       n_rows: [ 100000 ]
       n_bins: [ 20 ]
-      n_rays: [ 1, 2 ]
+      n_rays: [ 2 ]
 
 discovery:
       n_rows: [ 25000, 100000 ]
