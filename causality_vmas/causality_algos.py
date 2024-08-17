@@ -428,7 +428,7 @@ class CausalInferenceForRL:
 
         total_cpus = os.cpu_count()
         cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = min(10, int(total_cpus * 0.5 * (1 - cpu_usage / 100)))
+        free_cpus = min(5, int(total_cpus * 0.5 * (1 - cpu_usage / 100)))
         num_workers = max(1, free_cpus)
 
         logging.info(f'Creating causal table with {num_workers} workers...')
