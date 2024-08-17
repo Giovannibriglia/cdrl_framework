@@ -13,3 +13,7 @@ flocking:
       n_rows: [ 25000, 100000 ]
       n_bins: [ 10, 15, 20 ]
       n_rays: [ 1, 2 ]
+
+give_way:
+      n_rows: [ 25000, 100000 ]
+      n_bins: [ 10, 15, 20 ]

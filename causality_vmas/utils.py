@@ -551,6 +551,72 @@ def _flocking_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     return final_obs
 
 
+def _give_way_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
+    df, params = input_elements
+
+    n_bins = params.get('n_bins', 20)
+    n_rows = params.get('n_rows', int(len(df) / 2))
+
+    not_discretize_these = [s for s in df.columns.to_list() if
+                            len(df[s].unique()) <= n_bins or
+                            LABEL_kind_group_var in s or
+                            'action' in s]
+
+    df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize_these)
+
+    new_df = df.loc[:n_rows - 1, :]
+
+    for col in new_df.columns.to_list():
+        if len(new_df[col].unique()) > n_bins and col not in not_discretize_these:
+            print(
+                f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
+
+    approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rows': n_rows},
+                   LABEL_discrete_intervals: discrete_intervals,
+                   LABEL_dataframe_approximated: new_df,
+                   LABEL_grouped_features: (0, [])}
+    return approx_dict
+
+
+def _give_way_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
+    discrete_intervals = kwargs[LABEL_discrete_intervals]
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in input_obs.items()}
+    return final_obs
+
+
+def _balance_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
+    discrete_intervals = kwargs[LABEL_discrete_intervals]
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in input_obs.items()}
+    return final_obs
+
+
+def _balance_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
+    df, params = input_elements
+
+    n_bins = params.get('n_bins', 20)
+    n_rows = params.get('n_rows', int(len(df) / 2))
+
+    not_discretize_these = [s for s in df.columns.to_list() if
+                            len(df[s].unique()) <= n_bins or
+                            LABEL_kind_group_var in s or
+                            'action' in s]
+
+    df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize_these)
+
+    new_df = df.loc[:n_rows - 1, :]
+
+    for col in new_df.columns.to_list():
+        if len(new_df[col].unique()) > n_bins and col not in not_discretize_these:
+            print(
+                f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
+
+    approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rows': n_rows},
+                   LABEL_discrete_intervals: discrete_intervals,
+                   LABEL_dataframe_approximated: new_df,
+                   LABEL_grouped_features: (0, [])}
+    return approx_dict
+
+
 def inverse_approximation_function(task: str):
     if task == 'navigation':
         return _navigation_inverse_approximation
@@ -558,6 +624,10 @@ def inverse_approximation_function(task: str):
         return _discovery_inverse_approximation
     elif task == 'flocking':
         return _flocking_inverse_approximation
+    elif task == 'give_way':
+        return _give_way_inverse_approximation
+    elif task == 'balance':
+        return _balance_inverse_approximation
     # TODO: others
     else:
         raise NotImplementedError("The inverse approximation function for this task has not been implemented")
@@ -581,6 +651,10 @@ def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
             approximator = _flocking_approximation
         elif task_name == 'discovery':
             approximator = _discovery_approximation
+        elif task_name == 'give_way':
+            approximator = _give_way_approximation
+        elif task_name == 'balance':
+            approximator = _balance_approximation
         # TODO: others
         else:
             raise NotImplementedError("The approximation function for this task has not been implemented")

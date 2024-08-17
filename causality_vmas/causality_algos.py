@@ -316,7 +316,7 @@ class SingleCausalInference:
 
 class CausalInferenceForRL:
     def __init__(self, online: bool, df_train: pd.DataFrame, causal_graph: nx.DiGraph,
-                 bn_dict: Dict = None, causal_table: pd.DataFrame = None, df_test: pd.DataFrame = None,
+                 bn_dict: Dict = None, causal_table: pd.DataFrame = None,
                  obs_train_to_test=None, grouped_features: Tuple = None):
         self.online = online
 
@@ -324,7 +324,6 @@ class CausalInferenceForRL:
         self.causal_graph = causal_graph
         self.dict_bn = bn_dict
 
-        self.df_test = df_test if df_test is not None else df_train
         self.obs_train_to_test = obs_train_to_test
 
         self.ci = SingleCausalInference(df_train, causal_graph, bn_dict)
@@ -340,7 +339,7 @@ class CausalInferenceForRL:
 
         self.causal_table = causal_table
 
-    def single_query(self, obs: Dict) -> Dict:
+    def _single_query(self, obs: Dict) -> Dict:
         reward_actions_values = {}
 
         # Query the distribution of actions for each reward
@@ -348,7 +347,7 @@ class CausalInferenceForRL:
             evidence = obs.copy()
             evidence.update({f'{self.reward_variable}': reward_value})
             # do "obs" | evidence "reward"+"obs" | look at "action"
-            self.check_values_in_states(self.ci.cbn.states, obs, evidence)
+            self._check_values_in_states(self.ci.cbn.states, obs, evidence)
             action_distribution = self.ci.infer(obs, self.action_variable, evidence)
             reward_actions_values[reward_value] = action_distribution
 
@@ -357,11 +356,11 @@ class CausalInferenceForRL:
     def _single_query_helper(self, obs: Dict, reward_value) -> tuple[Any, dict]:
         evidence = obs.copy()
         evidence.update({f'{self.reward_variable}': reward_value})
-        self.check_values_in_states(self.ci.cbn.states, obs, evidence)
+        self._check_values_in_states(self.ci.cbn.states, obs, evidence)
         action_distribution = self.ci.infer(obs, self.action_variable, evidence)
         return reward_value, action_distribution
 
-    def single_query_parallel(self, obs: Dict) -> Dict:
+    def _single_query_parallel(self, obs: Dict) -> Dict:
         with multiprocessing.Pool() as pool:
             results = pool.starmap(self._single_query_helper,
                                    [(obs, reward_value) for reward_value in self.reward_values])
@@ -369,7 +368,7 @@ class CausalInferenceForRL:
         return reward_actions_values
 
     @staticmethod
-    def check_values_in_states(known_states, observation, evidence):
+    def _check_values_in_states(known_states, observation, evidence):
         not_in_observation = {}
         not_in_evidence = {}
 
@@ -408,9 +407,9 @@ class CausalInferenceForRL:
             obs = input_obs
 
         if if_parallel:
-            reward_action_values = self.single_query_parallel(obs)
+            reward_action_values = self._single_query_parallel(obs)
         else:
-            reward_action_values = self.single_query(obs)
+            reward_action_values = self._single_query(obs)
 
         row_result = obs.copy()
         row_result[f'{LABEL_reward_action_values}'] = reward_action_values
@@ -418,35 +417,41 @@ class CausalInferenceForRL:
         return row_result
 
     def create_causal_table(self, show_progress: bool = False) -> pd.DataFrame:
-        rows_causal_table = []
-        """print('only 100 rows')
-        self.df_test = self.df_test.loc[:99, :]"""
+        model = self.ci.return_cbn()
 
-        selected_columns = [s for s in self.df_test.columns.to_list() if
-                            s != self.reward_variable and s != self.action_variable]
+        variables = model.nodes()
+        state_names = {variable: model.get_cpds(variable).state_names[variable] for variable in variables}
+        all_combinations = list(itertools.product(*state_names.values()))
+        df_all_combinations = pd.DataFrame(all_combinations, columns=list(state_names.keys()))
 
-        selected_df = self.df_test.loc[:, selected_columns]
-        tasks = [row.to_dict() for n, row in selected_df.iterrows()]
+        df_all_combinations.drop([self.action_variable, self.reward_variable], axis=1, inplace=True)
 
         total_cpus = os.cpu_count()
         cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = min(10, int(total_cpus*0.5 * (1 - cpu_usage / 100)))
-        n_workers = max(1, free_cpus)
+        free_cpus = min(10, int(total_cpus * 0.5 * (1 - cpu_usage / 100)))
+        num_workers = max(1, free_cpus)
 
-        logging.info(f'Creating causal table with {n_workers} workers...')
-        with ProcessPoolExecutor(max_workers=n_workers) as executor:
-            futures = [executor.submit(self._compute_reward_action_values, task, False) for task in tasks]
-            if show_progress:
-                for future in tqdm(as_completed(futures), total=len(futures),
-                                   desc=f'Inferring causal knowledge...'):
-                    rows_causal_table.append(future.result())
-            else:
-                for future in as_completed(futures):
-                    rows_causal_table.append(future.result())
+        logging.info(f'Creating causal table with {num_workers} workers...')
+
+        rows = [row for _, row in df_all_combinations.iterrows()]
+
+        if show_progress:
+            with multiprocessing.Pool(num_workers) as pool:
+                rows_causal_table = list(
+                    tqdm(pool.imap(self.process_row_causal_table, rows), total=len(rows), desc='Computing causal table...'))
+        else:
+            with multiprocessing.Pool(num_workers) as pool:
+                rows_causal_table = pool.map(self.process_row_causal_table, rows)
 
         causal_table = pd.DataFrame(rows_causal_table)
 
         return causal_table
+
+    def process_row_causal_table(self, row):
+        current_state = row.to_dict()
+        reward_action_values = self._single_query(current_state)
+        current_state[LABEL_reward_action_values] = reward_action_values
+        return current_state
 
     def return_reward_action_values(self, input_obs: Dict, if_parallel: bool = False) -> Dict:
         if self.online:

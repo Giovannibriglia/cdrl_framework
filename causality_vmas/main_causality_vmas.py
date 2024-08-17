@@ -16,17 +16,17 @@ def main(task_name: str):
     """experiment = VMASExperiment(task_name)
     df_start, info_task, _ = experiment.run_experiment()"""
 
-    df_start = pd.read_pickle(f'./dataframes/df_{task}_pomdp_discrete_actions_0.pkl')
-    with open(f'./dataframes/info_{task}_pomdp_discrete_actions_0.json', 'r') as file:
+    df_start = pd.read_pickle(f'./dataframes/df_{task_name}_pomdp_discrete_actions_0.pkl')
+    with open(f'./dataframes/info_{task_name}_pomdp_discrete_actions_0.json', 'r') as file:
         info_task = json.load(file)
 
     agent0_columns = [col for col in df_start.columns if 'agent_0' in col]
     df_start = df_start.loc[:, agent0_columns]
 
-    """sensitive_analysis = SensitiveAnalysis(df_start, task_name, info_task)
-    path_results = sensitive_analysis.computing_CIQs()"""
+    sensitive_analysis = SensitiveAnalysis(df_start, task_name, info_task)
+    path_results = sensitive_analysis.computing_CIQs()
 
-    path_results = f'./results_sensitive_analysis_{task_name}'
+    #  = f'./results_sensitive_analysis_{task_name}'
 
     best_approx = BestApprox(path_results, df_start)
     best_approx.evaluate()
@@ -55,7 +55,7 @@ def main(task_name: str):
 
         if (df_approx is not None and causal_graph is not None) or bn_dict is not None:
             offline_ci = CausalInferenceForRL(online, df_approx, causal_graph, bn_dict, causal_table,
-                                              df_start, obs_train_to_test, grouped_features)
+                                              obs_train_to_test, grouped_features)
             ct = offline_ci.create_causal_table(show_progress=True)
             ct.to_pickle(f'{path_file}/causal_table.pkl')
             ct.to_excel(f'{path_file}/causal_table.xlsx')

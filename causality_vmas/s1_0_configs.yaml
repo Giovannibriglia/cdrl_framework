@@ -21,6 +21,12 @@ scenario:
         continuous_actions: False
         seed: 42
 
+    give_way:
+        continuous_actions: False
+        seed: 42
+
     balance:
         continuous_actions: False
         seed: 42
+
+

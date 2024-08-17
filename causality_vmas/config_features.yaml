@@ -29,6 +29,13 @@ flocking:
         6: "DistGY"
         others: "ray"
 
+give_way:
+    features:
+        1: "PosX"
+        2: "PosY"
+        3: "VelX"
+        4: "VelY"
+
 balance:
     features:
         1: "VelX"
@@ -45,10 +52,3 @@ balance:
         12: "VelLineX"
         13: "AngVel"
         14: "Rot"
-
-give_way:
-    features:
-        1: "PosX"
-        2: "PosY"
-        3: "VelX"
-        4: "VelY"

@@ -8,6 +8,9 @@ causality_vmas/df_approx_and_info_navigation/
 causality_vmas/df_approx_and_info_navigation2/
 causality_vmas/df_approx_and_info_navigation_too_big/
 others/
+cdrl_framework.egg-info
+build
+dist
 
 
 
