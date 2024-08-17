@@ -416,7 +416,7 @@ class CausalInferenceForRL:
 
         return row_result
 
-    def create_causal_table(self, show_progress: bool = False) -> pd.DataFrame:
+    def create_causal_table(self, show_progress: bool = False, parallel: bool = False) -> pd.DataFrame:
         model = self.ci.return_cbn()
 
         variables = model.nodes()
@@ -426,22 +426,28 @@ class CausalInferenceForRL:
 
         df_all_combinations.drop([self.action_variable, self.reward_variable], axis=1, inplace=True)
 
-        total_cpus = os.cpu_count()
-        cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = min(5, int(total_cpus * 0.5 * (1 - cpu_usage / 100)))
-        num_workers = max(1, free_cpus)
-
-        logging.info(f'Creating causal table with {num_workers} workers...')
-
         rows = [row for _, row in df_all_combinations.iterrows()]
 
-        if show_progress:
-            with multiprocessing.Pool(num_workers) as pool:
-                rows_causal_table = list(
-                    tqdm(pool.imap(self.process_row_causal_table, rows), total=len(rows), desc='Computing causal table...'))
+        if parallel:
+            total_cpus = os.cpu_count()
+            cpu_usage = psutil.cpu_percent(interval=1)
+            free_cpus = min(5, int(total_cpus * 0.5 * (1 - cpu_usage / 100)))
+            num_workers = max(1, free_cpus)
+
+            logging.info(f'Creating causal table with {num_workers} workers...')
+
+            if show_progress:
+                with multiprocessing.Pool(num_workers) as pool:
+                    rows_causal_table = list(
+                        tqdm(pool.imap(self.process_row_causal_table, rows), total=len(rows), desc='Computing causal table...'))
+            else:
+                with multiprocessing.Pool(num_workers) as pool:
+                    rows_causal_table = pool.map(self.process_row_causal_table, rows)
         else:
-            with multiprocessing.Pool(num_workers) as pool:
-                rows_causal_table = pool.map(self.process_row_causal_table, rows)
+            rows_causal_table = []
+            for_cycle = tqdm(rows, Desc='Computing causal table...') if show_progress else rows
+            for row in for_cycle:
+                rows_causal_table.append(self.process_row_causal_table(row))
 
         causal_table = pd.DataFrame(rows_causal_table)
 
