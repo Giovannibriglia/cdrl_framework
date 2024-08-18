@@ -475,7 +475,7 @@ class CausalInferenceForRL:
         row_memory_estimate = len(self.columns) * 8  # Approximate bytes per row
         memory_info = psutil.virtual_memory()
         available_memory = memory_info.available
-        num_workers = max(1, min(20, available_memory // (row_memory_estimate * chunk_size * 2)))
+        num_workers = max(1, min(5, available_memory // (row_memory_estimate * chunk_size * 2)))
 
         logging.info(f'Creating causal table with {num_workers} workers...')
 
