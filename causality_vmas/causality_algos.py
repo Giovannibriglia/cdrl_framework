@@ -1,4 +1,5 @@
 import itertools
+import math
 import random
 import re
 import os
@@ -463,7 +464,7 @@ class CausalInferenceForRL:
         return processed_rows
 
     def create_causal_table(self, show_progress: bool = False, parallel: bool = False,
-                            chunk_size: int = 10000) -> pd.DataFrame:
+                            chunk_size: int = 1000) -> pd.DataFrame:
         model = self.ci.return_cbn()
 
         variables = model.nodes()
@@ -471,27 +472,29 @@ class CausalInferenceForRL:
         all_combinations = itertools.product(*state_names.values())
         self.columns = list(state_names.keys())
 
-        # Estimate the memory usage per row
-        row_memory_estimate = len(self.columns) * 8  # Approximate bytes per row
-        memory_info = psutil.virtual_memory()
-        available_memory = memory_info.available
-        num_workers = max(1, min(5, available_memory // (row_memory_estimate * chunk_size * 2)))
-
-        logging.info(f'Creating causal table with {num_workers} workers...')
+        total_combinations = math.prod(len(states) for states in state_names.values())
 
         if parallel:
+            row_memory_estimate = len(self.columns) * 16
+            memory_info = psutil.virtual_memory()
+            available_memory = memory_info.available
+            num_workers = max(1, min(5, available_memory // (row_memory_estimate * chunk_size * 2)))
+
+            logging.info(f'Creating causal table with {num_workers} workers...')
+
             with multiprocessing.Pool(num_workers) as pool:
                 chunks = self.chunked_iterator(all_combinations, chunk_size)
                 if show_progress:
                     result = list(tqdm(pool.imap(self.process_chunk, chunks),
-                                       total=(memory_info.total // row_memory_estimate) // chunk_size,
+                                       total=total_combinations // chunk_size,
                                        desc='Computing causal table...'))
                 else:
                     result = pool.map(self.process_chunk, chunks)
         else:
             chunks = self.chunked_iterator(all_combinations, chunk_size)
             result = []
-            for chunk in (tqdm(chunks, desc='Computing causal table...') if show_progress else chunks):
+            for chunk in (tqdm(chunks, desc='Computing causal table...',
+                               total=total_combinations // chunk_size) if show_progress else chunks):
                 result.extend(self.process_chunk(chunk))
 
         causal_table = pd.DataFrame(np.concatenate(result, axis=0), columns=[col for col in self.columns if

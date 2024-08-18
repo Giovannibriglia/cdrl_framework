@@ -32,7 +32,6 @@ def main(task: str):
                                               grouped_features=grouped_features)
             ct = offline_ci.create_causal_table(show_progress=True, parallel=True)
             ct.to_pickle(f'{path_file}/causal_table.pkl')
-            ct.to_pickle(f'{path_file}/causal_table.pkl')
         else:
             print('some files are empty')
     else:
