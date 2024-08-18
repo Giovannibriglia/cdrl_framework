@@ -429,10 +429,13 @@ class CausalInferenceForRL:
         rows = [row for _, row in df_all_combinations.iterrows()]
 
         if parallel:
-            total_cpus = os.cpu_count()
-            cpu_usage = psutil.cpu_percent(interval=1)
-            free_cpus = min(5, int(total_cpus * 0.5 * (1 - cpu_usage / 100)))
-            num_workers = max(1, free_cpus)
+            #total_cpus = os.cpu_count()
+            #cpu_usage = psutil.cpu_percent(interval=1)
+            #free_cpus = min(3, int(total_cpus * 0.5 * (1 - cpu_usage / 100)))
+            # num_workers = max(1, free_cpus)
+            memory_info = psutil.virtual_memory()
+            available_memory = memory_info.available
+            num_workers = available_memory // 0.75
 
             logging.info(f'Creating causal table with {num_workers} workers...')
 
