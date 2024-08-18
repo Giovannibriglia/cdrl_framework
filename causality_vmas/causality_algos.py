@@ -448,7 +448,7 @@ class CausalInferenceForRL:
                     rows_causal_table = pool.map(self.process_row_causal_table, rows)
         else:
             rows_causal_table = []
-            for_cycle = tqdm(rows, Desc='Computing causal table...') if show_progress else rows
+            for_cycle = tqdm(rows, desc='Computing causal table...') if show_progress else rows
             for row in for_cycle:
                 rows_causal_table.append(self.process_row_causal_table(row))
 
