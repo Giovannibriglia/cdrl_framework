@@ -31,6 +31,7 @@ def main(task: str):
                                               causal_table=None, obs_train_to_test=obs_train_to_test,
                                               grouped_features=grouped_features)
             ct = offline_ci.create_causal_table(show_progress=True)
+            print('finish')
             ct.to_pickle(f'{path_file}/causal_table.pkl')
             ct.to_excel(f'{path_file}/causal_table.xlsx')
         else:

@@ -2,6 +2,7 @@ import itertools
 import math
 import random
 import re
+from multiprocessing.pool import ThreadPool
 from typing import Dict, Tuple, Any
 import multiprocessing
 import causalnex
@@ -416,7 +417,7 @@ class CausalInferenceForRL:
 
         return row_result
 
-    def create_causal_table(self, show_progress: bool = False) -> pd.DataFrame:
+    def create_causal_table(self, show_progress: bool = False, parallel: bool = True) -> pd.DataFrame:
         model = self.ci.return_cbn()
 
         variables = model.nodes()
@@ -434,15 +435,22 @@ class CausalInferenceForRL:
         else:
             combinations_dicts = [dict(zip(state_names.keys(), combination)) for combination in all_combinations]
 
-        result = []
-        if show_progress:
-            for combination in tqdm(combinations_dicts, desc='Computing causal table...'):
-                result.append(self._process_combination(combination))
+        if parallel:
+            with ThreadPool() as pool:
+                if show_progress:
+                    results = pool.map(self._process_combination, tqdm(combinations_dicts, desc='Computing causal table...'))
+                else:
+                    results = pool.map(self._process_combination, combinations_dicts)
         else:
-            for combination in combinations_dicts:
-                result.append(self._process_combination(combination))
-
-        causal_table = pd.DataFrame(result)
+            results = []
+            if show_progress:
+                for combination in tqdm(combinations_dicts, desc='Computing causal table...'):
+                    results.append(self._process_combination(combination))
+            else:
+                for combination in combinations_dicts:
+                    results.append(self._process_combination(combination))
+        print('finish1')
+        causal_table = pd.DataFrame(results)
         return causal_table
 
     def _process_combination(self, combination):
