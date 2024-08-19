@@ -67,7 +67,7 @@ class SensitiveAnalysis:
         return self.dir_save
 
 
-def main(task_name):
+def main(task_name: str):
 
     df = pd.read_pickle(f'./dataframes/df_{task_name}_pomdp_discrete_actions_0.pkl')
     agent0_columns = [col for col in df.columns if 'agent_0' in col]
@@ -81,4 +81,4 @@ def main(task_name):
 
 
 if __name__ == '__main__':
-    main('flocking')
+    main('navigation')

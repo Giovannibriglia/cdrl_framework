@@ -2,8 +2,9 @@ import itertools
 import math
 import random
 import re
+import pickle
 from multiprocessing.pool import ThreadPool
-from typing import Dict, Tuple, Any
+from typing import Dict, Tuple, Any, List
 import multiprocessing
 import causalnex
 import networkx as nx
@@ -354,20 +355,6 @@ class CausalInferenceForRL:
 
         return reward_actions_values
 
-    def _single_query_helper(self, obs: Dict, reward_value) -> tuple[Any, dict]:
-        evidence = obs.copy()
-        evidence.update({f'{self.reward_variable}': reward_value})
-        self._check_values_in_states(self.ci.cbn.states, obs, evidence)
-        action_distribution = self.ci.infer(obs, self.action_variable, evidence)
-        return reward_value, action_distribution
-
-    def _single_query_parallel(self, obs: Dict) -> Dict:
-        with multiprocessing.Pool() as pool:
-            results = pool.starmap(self._single_query_helper,
-                                   [(obs, reward_value) for reward_value in self.reward_values])
-        reward_actions_values = dict(results)
-        return reward_actions_values
-
     @staticmethod
     def _check_values_in_states(known_states, observation, evidence):
         not_in_observation = {}
@@ -397,7 +384,7 @@ class CausalInferenceForRL:
         if not_in_evidence != {}:
             print("\nValues not in evidence: ", not_in_evidence)
 
-    def _compute_reward_action_values(self, input_obs: Dict, parallel: bool = False) -> Dict:
+    def _compute_reward_action_values(self, input_obs: Dict) -> Dict:
         if self.obs_train_to_test is not None:
             kwargs = {}
             kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
@@ -407,17 +394,14 @@ class CausalInferenceForRL:
         else:
             obs = input_obs
 
-        if parallel:
-            reward_action_values = self._single_query_parallel(obs)
-        else:
-            reward_action_values = self._single_query(obs)
+        reward_action_values = self._single_query(obs)
 
         row_result = obs.copy()
         row_result[f'{LABEL_reward_action_values}'] = reward_action_values
 
         return row_result
 
-    def create_causal_table(self, show_progress: bool = False, parallel: bool = True) -> pd.DataFrame:
+    def create_causal_combinations(self, show_progress: bool = False, parallel: bool = True) -> List[Dict]:
         model = self.ci.return_cbn()
 
         variables = model.nodes()
@@ -449,22 +433,21 @@ class CausalInferenceForRL:
             else:
                 for combination in combinations_dicts:
                     results.append(self._process_combination(combination))
-        print('finish1')
-        causal_table = pd.DataFrame(results)
-        return causal_table
+
+        return results
 
     def _process_combination(self, combination):
         reward_action_values = self._single_query(combination)
         combination[LABEL_reward_action_values] = reward_action_values
         return combination
 
-    def return_reward_action_values(self, input_obs: Dict, if_parallel: bool = False) -> Dict:
+    def return_reward_action_values(self, input_obs: Dict) -> Dict:
         if self.online:
-            dict_input_and_rav = self._compute_reward_action_values(input_obs, parallel=if_parallel)
+            dict_input_and_rav = self._compute_reward_action_values(input_obs)
             reward_action_values = dict_input_and_rav[LABEL_reward_action_values]
         else:
             if self.causal_table is None:
-                self.causal_table = self.create_causal_table(show_progress=True)
+                self.causal_table = self.create_causal_combinations(show_progress=True)
 
             if self.obs_train_to_test is not None:
                 kwargs = {}

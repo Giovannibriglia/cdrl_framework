@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from multiprocessing.pool import ThreadPool
 from typing import Dict, List, Union, Tuple
 import os
 import numpy as np
@@ -85,8 +86,7 @@ class CausalActionsFilter:
             if self.last_obs_continuous[env_idx][agent_idx] is not None:
                 delta_obs_continuous = calculate_delta_obs_continuous(current_obs_continuous,
                                                                       self.last_obs_continuous[env_idx][agent_idx])
-                reward_action_values = causal_inference_agent.return_reward_action_values(delta_obs_continuous,
-                                                                                          if_parallel=False)
+                reward_action_values = causal_inference_agent.return_reward_action_values(delta_obs_continuous)
                 action_reward_scores = self._weight_actions_rewards(reward_action_values)
                 actions_to_discard = self._actions_mask_filter(action_reward_scores)
             self.last_obs_continuous[env_idx][agent_idx] = current_obs_continuous
@@ -112,16 +112,17 @@ class CausalActionsFilter:
 
         actions_to_discard = initialize_actions_to_discard(num_envs, num_agents)
 
-        with ThreadPoolExecutor() as executor:
-            futures = [
-                executor.submit(process_env_agent, env_idx, agent_idx, multiple_observation[env_idx, agent_idx],
-                                self.ci_agents[(env_idx * num_agents + agent_idx) % len(self.ci_agents)])
+        with ThreadPoolExecutor() as pool:
+            tasks = [
+                (env_idx, agent_idx, multiple_observation[env_idx, agent_idx],
+                 self.ci_agents[(env_idx * num_agents + agent_idx) % len(self.ci_agents)])
                 for env_idx in range(num_envs) for agent_idx in range(num_agents)
             ]
 
-            for future in futures:
-                env_idx, agent_idx, result = future.result()
-                actions_to_discard[env_idx][agent_idx] = result
+            results = pool.map(lambda args: process_env_agent(*args), tasks)
+
+        for env_idx, agent_idx, result in results:
+            actions_to_discard[env_idx][agent_idx] = result
 
         return convert_actions_to_input_type(actions_to_discard, input_type)
 

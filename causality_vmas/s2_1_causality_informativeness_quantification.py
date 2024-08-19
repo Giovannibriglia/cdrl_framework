@@ -1,6 +1,7 @@
 import logging
 import os
 from concurrent.futures import as_completed, ProcessPoolExecutor
+from multiprocessing.pool import ThreadPool
 from typing import Dict, Tuple, List
 import networkx as nx
 import pandas as pd
@@ -87,29 +88,22 @@ class CausalityInformativenessQuantification:
         self.discrete_intervals_bn = extract_intervals_from_bn(cbn)
         self.dict_bn = bn_to_dict(cbn)
 
-        total_cpus = os.cpu_count()
-        cpu_usage = psutil.cpu_percent(interval=1)
-        free_cpus = min(5, int(total_cpus*0.5 * (1 - cpu_usage / 100)))
-        n_workers = max(1, free_cpus)  # Ensure at least one worker is used
-
         df_test = self.df_target.loc[:min(self.n_test_samples, len(self.df_target)), :]
 
         tasks = [row.to_dict() for n, row in df_test.iterrows()]
 
-        logging.info(f'Starting causal inference assessment with {n_workers} workers...')
         try:
-            with ProcessPoolExecutor(max_workers=n_workers) as executor:
-                futures = [executor.submit(self._process_row, task) for task in tasks]
+            with ThreadPool() as pool:
                 if show_progress:
-                    for future in tqdm(as_completed(futures), total=len(futures), desc=f'Inferring causal knowledge...'):
-                        target_value, pred_value = future.result()
-                        self.dict_scores[LABEL_target_value].append(target_value)
-                        self.dict_scores[LABEL_predicted_value].append(pred_value)
+                    results = list(tqdm(pool.imap(self._process_row, tasks), total=len(tasks),
+                                        desc='Inferring causal knowledge...'))
                 else:
-                    for future in as_completed(futures):
-                        target_value, pred_value = future.result()
-                        self.dict_scores[LABEL_target_value].append(target_value)
-                        self.dict_scores[LABEL_predicted_value].append(pred_value)
+                    results = pool.map(self._process_row, tasks)
+
+            for target_value, pred_value in results:
+                self.dict_scores[LABEL_target_value].append(target_value)
+                self.dict_scores[LABEL_predicted_value].append(pred_value)
+
         except Exception as e:
             logging.error(f'Causal inference assessment failed: {e}')
             return
@@ -138,12 +132,12 @@ class CausalityInformativenessQuantification:
         return value_target, value_pred
 
 
-def main():
-    task = 'navigation'
+def main(task: str):
+    task = task.lower()
 
     df_test = pd.read_pickle(f'./dataframes/df_{task}_pomdp_discrete_actions_0.pkl')
     agent0_columns = [col for col in df_test.columns if 'agent_0' in col]
-    df_test = df_test.loc[:50001, agent0_columns]
+    df_test = df_test.loc[:, agent0_columns]
 
     dict_approx = _navigation_approximation((df_test, {'BINS': 20, 'SENSORS': 1, 'ROWS': 20000}))
     df_train = dict_approx['new_df']
@@ -154,4 +148,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    task_name = str(input('Select task: '))
+    main(task_name)
