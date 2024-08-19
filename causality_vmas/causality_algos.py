@@ -396,7 +396,7 @@ class CausalInferenceForRL:
         if not_in_evidence != {}:
             print("\nValues not in evidence: ", not_in_evidence)
 
-    def _compute_reward_action_values(self, input_obs: Dict, if_parallel: bool = False) -> Dict:
+    def _compute_reward_action_values(self, input_obs: Dict, parallel: bool = False) -> Dict:
         if self.obs_train_to_test is not None:
             kwargs = {}
             kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
@@ -406,7 +406,7 @@ class CausalInferenceForRL:
         else:
             obs = input_obs
 
-        if if_parallel:
+        if parallel:
             reward_action_values = self._single_query_parallel(obs)
         else:
             reward_action_values = self._single_query(obs)
@@ -416,7 +416,7 @@ class CausalInferenceForRL:
 
         return row_result
 
-    def create_causal_table(self, show_progress: bool = False, parallel: bool = False) -> pd.DataFrame:
+    def create_causal_table(self, show_progress: bool = False) -> pd.DataFrame:
         model = self.ci.return_cbn()
 
         variables = model.nodes()
@@ -434,35 +434,13 @@ class CausalInferenceForRL:
         else:
             combinations_dicts = [dict(zip(state_names.keys(), combination)) for combination in all_combinations]
 
-        if parallel:
-            num_workers = 5 #multiprocessing.cpu_count()
-
-            chunk_size = 10000
-
-            with multiprocessing.Pool(processes=num_workers) as pool:
-                try:
-                    if show_progress:
-                        result = list(
-                            tqdm(pool.imap(self._process_combination, combinations_dicts, chunksize=chunk_size),
-                                 total=len(combinations_dicts),
-                                 desc=f'Computing causal table in parallel with {num_workers} workers...'))
-                    else:
-                        result = pool.map(self._process_combination, combinations_dicts, chunksize=chunk_size)
-                except Exception as e:
-                    # Handle or log exception here
-                    raise e  # or handle the error as needed
-                finally:
-                    pool.close()
-                    pool.join()  # Ensure all worker processes have finished
-
+        result = []
+        if show_progress:
+            for combination in tqdm(combinations_dicts, desc='Computing causal table...'):
+                result.append(self._process_combination(combination))
         else:
-            result = []
-            if show_progress:
-                for combination in tqdm(combinations_dicts, desc='Computing causal table...'):
-                    result.append(self._process_combination(combination))
-            else:
-                for combination in combinations_dicts:
-                    result.append(self._process_combination(combination))
+            for combination in combinations_dicts:
+                result.append(self._process_combination(combination))
 
         causal_table = pd.DataFrame(result)
         return causal_table
@@ -474,7 +452,7 @@ class CausalInferenceForRL:
 
     def return_reward_action_values(self, input_obs: Dict, if_parallel: bool = False) -> Dict:
         if self.online:
-            dict_input_and_rav = self._compute_reward_action_values(input_obs, if_parallel=if_parallel)
+            dict_input_and_rav = self._compute_reward_action_values(input_obs, parallel=if_parallel)
             reward_action_values = dict_input_and_rav[LABEL_reward_action_values]
         else:
             if self.causal_table is None:
