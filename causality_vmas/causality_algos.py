@@ -437,7 +437,7 @@ class CausalInferenceForRL:
         if parallel:
             num_workers = 5 #multiprocessing.cpu_count()
 
-            chunk_size = max(1, len(combinations_dicts) // (num_workers * 4))
+            chunk_size = 10000
 
             with multiprocessing.Pool(processes=num_workers) as pool:
                 try:
