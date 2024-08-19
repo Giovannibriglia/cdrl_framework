@@ -2,9 +2,7 @@ import itertools
 import math
 import random
 import re
-import os
 from typing import Dict, Tuple, Any
-from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 import causalnex
 import networkx as nx
@@ -15,6 +13,7 @@ from causallearn.search.ConstraintBased.PC import pc
 from causalnex.inference import InferenceEngine
 from causalnex.structure.pytorch import from_pandas
 from pgmpy.estimators import MaximumLikelihoodEstimator
+from pgmpy.inference import VariableElimination
 from pgmpy.inference.CausalInference import CausalInference
 from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm import tqdm
@@ -417,104 +416,61 @@ class CausalInferenceForRL:
 
         return row_result
 
-    """    def create_causal_table(self, show_progress: bool = False, parallel: bool = False) -> pd.DataFrame:
+    def create_causal_table(self, show_progress: bool = False, parallel: bool = False) -> pd.DataFrame:
         model = self.ci.return_cbn()
 
         variables = model.nodes()
-        state_names = {variable: model.get_cpds(variable).state_names[variable] for variable in variables}
-        all_combinations = list(itertools.product(*state_names.values()))
-        df_all_combinations = pd.DataFrame(all_combinations, columns=list(state_names.keys()))
+        excluded_variables = {"agent_0_reward", "agent_0_action_0", "agent_0_action_1"}
+        state_names = {variable: model.get_cpds(variable).state_names[variable] for variable in variables if
+                       variable not in excluded_variables}
 
-        df_all_combinations.drop([self.action_variable, self.reward_variable], axis=1, inplace=True)
-
-        rows = [row for _, row in df_all_combinations.iterrows()]
-
-        if parallel:
-            #total_cpus = os.cpu_count()
-            #cpu_usage = psutil.cpu_percent(interval=1)
-            #free_cpus = min(3, int(total_cpus * 0.5 * (1 - cpu_usage / 100)))
-            # num_workers = max(1, free_cpus)
-            memory_info = psutil.virtual_memory()
-            available_memory = memory_info.available
-            num_workers = available_memory // 0.75
-
-            logging.info(f'Creating causal table with {num_workers} workers...')
-
-            if show_progress:
-                with multiprocessing.Pool(num_workers) as pool:
-                    rows_causal_table = list(
-                        tqdm(pool.imap(self.process_row_causal_table, rows), total=len(rows), desc='Computing causal table...'))
-            else:
-                with multiprocessing.Pool(num_workers) as pool:
-                    rows_causal_table = pool.map(self.process_row_causal_table, rows)
-        else:
-            rows_causal_table = []
-            for_cycle = tqdm(rows, desc='Computing causal table...') if show_progress else rows
-            for row in for_cycle:
-                rows_causal_table.append(self.process_row_causal_table(row))
-
-        causal_table = pd.DataFrame(rows_causal_table)
-
-        return causal_table"""
-
-    def process_chunk(self, chunk):
-        chunk_df = pd.DataFrame(chunk, columns=self.columns)
-        chunk_df.drop([self.action_variable, self.reward_variable], axis=1, inplace=True)
-        processed_rows = [self.process_row_causal_table(row) for _, row in chunk_df.iterrows()]
-        return processed_rows
-
-    def create_causal_table(self, show_progress: bool = False, parallel: bool = False,
-                            chunk_size: int = 1000) -> pd.DataFrame:
-        model = self.ci.return_cbn()
-
-        variables = model.nodes()
-        state_names = {variable: model.get_cpds(variable).state_names[variable] for variable in variables}
         all_combinations = itertools.product(*state_names.values())
-        self.columns = list(state_names.keys())
-
         total_combinations = math.prod(len(states) for states in state_names.values())
 
-        if parallel:
-            row_memory_estimate = len(self.columns) * 16
-            memory_info = psutil.virtual_memory()
-            available_memory = memory_info.available
-            num_workers = max(1, min(5, available_memory // (row_memory_estimate * chunk_size * 2)))
-
-            logging.info(f'Creating causal table with {num_workers} workers...')
-
-            with multiprocessing.Pool(num_workers) as pool:
-                chunks = self.chunked_iterator(all_combinations, chunk_size)
-                if show_progress:
-                    result = list(tqdm(pool.imap(self.process_chunk, chunks),
-                                       total=total_combinations // chunk_size,
-                                       desc='Computing causal table...'))
-                else:
-                    result = pool.map(self.process_chunk, chunks)
+        if show_progress:
+            combinations_dicts = [dict(zip(state_names.keys(), combination)) for
+                                  combination in tqdm(all_combinations, total=total_combinations,
+                                                      desc='Generating all possible state-value combinations...')]
         else:
-            chunks = self.chunked_iterator(all_combinations, chunk_size)
-            result = []
-            for chunk in (tqdm(chunks, desc='Computing causal table...',
-                               total=total_combinations // chunk_size) if show_progress else chunks):
-                result.extend(self.process_chunk(chunk))
+            combinations_dicts = [dict(zip(state_names.keys(), combination)) for combination in all_combinations]
 
-        causal_table = pd.DataFrame(np.concatenate(result, axis=0), columns=[col for col in self.columns if
-                                                                             col not in [self.action_variable,
-                                                                                         self.reward_variable]])
+        if parallel:
+            num_workers = 5 #multiprocessing.cpu_count()
+
+            chunk_size = max(1, len(combinations_dicts) // (num_workers * 4))
+
+            with multiprocessing.Pool(processes=num_workers) as pool:
+                try:
+                    if show_progress:
+                        result = list(
+                            tqdm(pool.imap(self._process_combination, combinations_dicts, chunksize=chunk_size),
+                                 total=len(combinations_dicts),
+                                 desc=f'Computing causal table in parallel with {num_workers} workers...'))
+                    else:
+                        result = pool.map(self._process_combination, combinations_dicts, chunksize=chunk_size)
+                except Exception as e:
+                    # Handle or log exception here
+                    raise e  # or handle the error as needed
+                finally:
+                    pool.close()
+                    pool.join()  # Ensure all worker processes have finished
+
+        else:
+            result = []
+            if show_progress:
+                for combination in tqdm(combinations_dicts, desc='Computing causal table...'):
+                    result.append(self._process_combination(combination))
+            else:
+                for combination in combinations_dicts:
+                    result.append(self._process_combination(combination))
+
+        causal_table = pd.DataFrame(result)
         return causal_table
 
-    def chunked_iterator(self, iterable, size):
-        it = iter(iterable)
-        while True:
-            chunk = list(itertools.islice(it, size))
-            if not chunk:
-                break
-            yield chunk
-
-    def process_row_causal_table(self, row):
-        current_state = row.to_dict()
-        reward_action_values = self._single_query(current_state)
-        current_state[LABEL_reward_action_values] = reward_action_values
-        return current_state
+    def _process_combination(self, combination):
+        reward_action_values = self._single_query(combination)
+        combination[LABEL_reward_action_values] = reward_action_values
+        return combination
 
     def return_reward_action_values(self, input_obs: Dict, if_parallel: bool = False) -> Dict:
         if self.online:

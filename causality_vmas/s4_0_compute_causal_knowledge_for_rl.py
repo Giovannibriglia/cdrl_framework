@@ -30,8 +30,9 @@ def main(task: str):
             offline_ci = CausalInferenceForRL(online=True, df_train=dataframe, causal_graph=causal_graph, bn_dict=bn_dict,
                                               causal_table=None, obs_train_to_test=obs_train_to_test,
                                               grouped_features=grouped_features)
-            ct = offline_ci.create_causal_table(show_progress=True, parallel=True)
+            ct = offline_ci.create_causal_table(show_progress=True, parallel=False)
             ct.to_pickle(f'{path_file}/causal_table.pkl')
+            ct.to_excel(f'{path_file}/causal_table.xlsx')
         else:
             print('some files are empty')
     else:
