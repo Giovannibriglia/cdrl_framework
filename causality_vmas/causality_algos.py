@@ -1,21 +1,20 @@
+import gc
 import itertools
 import math
 import random
 import re
-import pickle
-from multiprocessing.pool import ThreadPool
-from typing import Dict, Tuple, Any, List
-import multiprocessing
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from multiprocessing.pool import ThreadPool, Pool
+from typing import Dict, Tuple, List
 import causalnex
 import networkx as nx
 import numpy as np
 import pandas as pd
-import psutil
 from causallearn.search.ConstraintBased.PC import pc
 from causalnex.inference import InferenceEngine
 from causalnex.structure.pytorch import from_pandas
 from pgmpy.estimators import MaximumLikelihoodEstimator
-from pgmpy.inference import VariableElimination
+
 from pgmpy.inference.CausalInference import CausalInference
 from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm import tqdm
@@ -23,7 +22,7 @@ import warnings
 import logging
 
 from causality_vmas import LABEL_reward_action_values, LABEL_discrete_intervals, LABEL_grouped_features
-from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn
+from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn, set_process_and_threads
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pgmpy.factors.discrete")
 
@@ -341,6 +340,8 @@ class CausalInferenceForRL:
 
         self.causal_table = causal_table
 
+        self.n_threads, self.n_processes = set_process_and_threads()
+
     def _single_query(self, obs: Dict) -> Dict:
         reward_actions_values = {}
 
@@ -401,7 +402,7 @@ class CausalInferenceForRL:
 
         return row_result
 
-    def create_causal_combinations(self, show_progress: bool = False, parallel: bool = True) -> List[Dict]:
+    def create_causal_table(self, show_progress: bool = False, parallel: bool = True) -> pd.DataFrame:
         model = self.ci.return_cbn()
 
         variables = model.nodes()
@@ -419,14 +420,16 @@ class CausalInferenceForRL:
         else:
             combinations_dicts = [dict(zip(state_names.keys(), combination)) for combination in all_combinations]
 
+        results = []
         if parallel:
-            with ThreadPool() as pool:
+            with ThreadPool(self.n_threads) as pool:
                 if show_progress:
-                    results = pool.map(self._process_combination, tqdm(combinations_dicts, desc='Computing causal table...'))
+                    results = list(tqdm(pool.imap_unordered(self._process_combination, combinations_dicts),
+                                        total=len(combinations_dicts),
+                                        desc=f'Computing causal table with {self.n_threads} threads...'))
                 else:
-                    results = pool.map(self._process_combination, combinations_dicts)
+                    results = list(pool.imap_unordered(self._process_combination, combinations_dicts))
         else:
-            results = []
             if show_progress:
                 for combination in tqdm(combinations_dicts, desc='Computing causal table...'):
                     results.append(self._process_combination(combination))
@@ -434,10 +437,16 @@ class CausalInferenceForRL:
                 for combination in combinations_dicts:
                     results.append(self._process_combination(combination))
 
-        return results
+        causal_table = pd.DataFrame(results)
+
+        return causal_table
 
     def _process_combination(self, combination):
-        reward_action_values = self._single_query(combination)
+        try:
+            reward_action_values = self._single_query(combination)
+        except Exception as e:
+            raise BlockingIOError(e)
+
         combination[LABEL_reward_action_values] = reward_action_values
         return combination
 
@@ -447,7 +456,7 @@ class CausalInferenceForRL:
             reward_action_values = dict_input_and_rav[LABEL_reward_action_values]
         else:
             if self.causal_table is None:
-                self.causal_table = self.create_causal_combinations(show_progress=True)
+                self.causal_table = self.create_causal_table(show_progress=True)
 
             if self.obs_train_to_test is not None:
                 kwargs = {}
@@ -469,3 +478,5 @@ class CausalInferenceForRL:
                                         for reward_value in self.reward_values}
 
         return reward_action_values
+
+

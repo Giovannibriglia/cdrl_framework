@@ -11,7 +11,8 @@ from tqdm import tqdm
 from causality_vmas import LABEL_target_value, LABEL_predicted_value, LABEL_grouped_features, LABEL_discrete_intervals
 from causality_vmas.causality_algos import CausalDiscovery, SingleCausalInference
 from causality_vmas.utils import (constraints_causal_graph, _navigation_approximation,
-                                  plot_graph, extract_intervals_from_bn, inverse_approximation_function, bn_to_dict)
+                                  plot_graph, extract_intervals_from_bn, inverse_approximation_function, bn_to_dict,
+                                  set_process_and_threads)
 
 show_progress_cd = False
 
@@ -92,13 +93,15 @@ class CausalityInformativenessQuantification:
 
         tasks = [row.to_dict() for n, row in df_test.iterrows()]
 
+        n_threads, n_processes = set_process_and_threads()
+
         try:
-            with ThreadPool() as pool:
+            with ThreadPool(n_threads) as pool:
                 if show_progress:
-                    results = list(tqdm(pool.imap(self._process_row, tasks), total=len(tasks),
+                    results = list(tqdm(pool.imap_unordered(self._process_row, tasks), total=len(tasks),
                                         desc='Inferring causal knowledge...'))
                 else:
-                    results = pool.map(self._process_row, tasks)
+                    results = pool.imap_unordered(self._process_row, tasks)
 
             for target_value, pred_value in results:
                 self.dict_scores[LABEL_target_value].append(target_value)

@@ -8,8 +8,8 @@ import random
 import re
 from decimal import Decimal
 from typing import Dict, Tuple, List, Union
-import time
-
+import platform
+import psutil
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -1175,3 +1175,43 @@ def process_singularities(data):
     plot_correlation_matrix(data)
 
     return data
+
+
+" ******************************************************************************************************************* "
+
+
+def set_process_and_threads() -> Tuple[int, int]:
+    def _get_max_n_threads() -> int:
+        # Get the operating system name
+        os_name = platform.system()
+
+        # Get total virtual memory in bytes
+        total_virtual_memory = psutil.virtual_memory().total
+        # print(f"Total Virtual Memory: {total_virtual_memory} bytes")
+
+        # Determine stack size based on the operating system
+        if os_name == "Linux":
+            import resource
+            # Get stack size in bytes on Linux
+            stack_size = resource.getrlimit(resource.RLIMIT_STACK)[0]
+        else:
+            # Default to 1 MB for non-Linux systems
+            stack_size = 1 * 1024 * 1024  # 1 MB in bytes
+
+        # Convert stack size to MB for consistency
+        stack_size_mb = stack_size / (1024 * 1024)
+        # print(f"Stack Size: {stack_size_mb} MB")
+
+        # Calculate the result
+        max_n_threads = int(total_virtual_memory / stack_size)
+        # print(f"Result: {max_n_threads}")
+
+        return max_n_threads
+
+    max_threads = _get_max_n_threads()
+    max_processes = os.cpu_count()
+
+    n_threads = min(25000, max_threads)
+    n_processes = min(5, max_processes)
+
+    return n_threads, n_processes
