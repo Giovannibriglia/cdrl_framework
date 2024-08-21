@@ -108,9 +108,9 @@ class CausalityInformativenessQuantification:
                 self.dict_scores[LABEL_predicted_value].append(pred_value)
 
         except Exception as e:
+            pool.terminate()
             logging.error(f'Causal inference assessment failed: {e}')
-            return
-
+#https://stackoverflow.com/questions/57507832/unable-to-allocate-array-with-shape-and-data-type
     def _process_row(self, row: Dict) -> Tuple[float, float]:
 
         value_target = row[self.target_feature]

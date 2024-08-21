@@ -1211,7 +1211,7 @@ def set_process_and_threads() -> Tuple[int, int]:
     max_threads = _get_max_n_threads()
     max_processes = os.cpu_count()
 
-    n_threads = min(25000, max_threads)
+    n_threads = min(5000, max_threads)
     n_processes = min(5, max_processes)
 
     return n_threads, n_processes
