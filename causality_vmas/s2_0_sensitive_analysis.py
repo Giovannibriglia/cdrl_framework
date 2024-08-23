@@ -1,6 +1,7 @@
+import json
 import logging
 from typing import List, Dict
-import json
+
 import pandas as pd
 
 from causality_vmas import LABEL_approximation_parameters, LABEL_dataframe_approximated, \

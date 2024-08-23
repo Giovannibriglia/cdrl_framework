@@ -1,11 +1,15 @@
-import gc
 import itertools
+import logging
 import math
 import random
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from multiprocessing.pool import ThreadPool, Pool
-from typing import Dict, Tuple, List
+import time
+import warnings
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from multiprocessing import Pool, Manager, Lock, Value
+from typing import Dict, Tuple
+
 import causalnex
 import networkx as nx
 import numpy as np
@@ -14,16 +18,14 @@ from causallearn.search.ConstraintBased.PC import pc
 from causalnex.inference import InferenceEngine
 from causalnex.structure.pytorch import from_pandas
 from pgmpy.estimators import MaximumLikelihoodEstimator
-
 from pgmpy.inference.CausalInference import CausalInference
 from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm import tqdm
-import warnings
-import logging
 
 from causality_vmas import LABEL_reward_action_values, LABEL_discrete_intervals, LABEL_grouped_features
-from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn, set_process_and_threads
+from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn, get_process_and_threads
 
+tqdm.pandas()
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pgmpy.factors.discrete")
 
 # Configure logging
@@ -263,7 +265,6 @@ class SingleCausalInference:
             pass
         # Ensure target variable is not part of the adjustment set
         adjustment_set.discard(target_variable)
-
         query_result = self.ci.query(
             variables=[target_variable],
             do=input_dict_do_ok,
@@ -319,6 +320,7 @@ class CausalInferenceForRL:
     def __init__(self, online: bool, df_train: pd.DataFrame, causal_graph: nx.DiGraph,
                  bn_dict: Dict = None, causal_table: pd.DataFrame = None,
                  obs_train_to_test=None, grouped_features: Tuple = None):
+
         self.online = online
 
         self.df_train = df_train
@@ -340,19 +342,22 @@ class CausalInferenceForRL:
 
         self.causal_table = causal_table
 
-        self.n_threads, self.n_processes = set_process_and_threads()
+        self.n_threads, self.n_processes = get_process_and_threads()
 
     def _single_query(self, obs: Dict) -> Dict:
-        reward_actions_values = {}
-
-        # Query the distribution of actions for each reward
-        for reward_value in self.reward_values:
-            evidence = obs.copy()
-            evidence.update({f'{self.reward_variable}': reward_value})
-            # do "obs" | evidence "reward"+"obs" | look at "action"
+        def get_action_distribution(reward_value):
+            # Create a new evidence dictionary by merging obs with the current reward_value
+            evidence = {**obs, f'{self.reward_variable}': reward_value}
+            # Check the values in the states
             self._check_values_in_states(self.ci.cbn.states, obs, evidence)
-            action_distribution = self.ci.infer(obs, self.action_variable, evidence)
-            reward_actions_values[reward_value] = action_distribution
+            # Infer the action distribution based on the evidence
+            return self.ci.infer(obs, self.action_variable, evidence)
+
+        # Construct the result dictionary using a dictionary comprehension
+        reward_actions_values = {
+            reward_value: get_action_distribution(reward_value)
+            for reward_value in self.reward_values
+        }
 
         return reward_actions_values
 
@@ -402,53 +407,19 @@ class CausalInferenceForRL:
 
         return row_result
 
-    def create_causal_table(self, show_progress: bool = False, parallel: bool = True) -> pd.DataFrame:
-        model = self.ci.return_cbn()
-
-        variables = model.nodes()
-        excluded_variables = {"agent_0_reward", "agent_0_action_0", "agent_0_action_1"}
-        state_names = {variable: model.get_cpds(variable).state_names[variable] for variable in variables if
-                       variable not in excluded_variables}
-
-        all_combinations = itertools.product(*state_names.values())
-        total_combinations = math.prod(len(states) for states in state_names.values())
-
-        if show_progress:
-            combinations_dicts = [dict(zip(state_names.keys(), combination)) for
-                                  combination in tqdm(all_combinations, total=total_combinations,
-                                                      desc='Generating all possible state-value combinations...')]
-        else:
-            combinations_dicts = [dict(zip(state_names.keys(), combination)) for combination in all_combinations]
-
-        results = []
-        if parallel:
-            with ThreadPool(self.n_threads) as pool:
-                if show_progress:
-                    results = list(tqdm(pool.imap_unordered(self._process_combination, combinations_dicts),
-                                        total=len(combinations_dicts),
-                                        desc=f'Computing causal table with {self.n_threads} threads...'))
-                else:
-                    results = list(pool.imap_unordered(self._process_combination, combinations_dicts))
-        else:
-            if show_progress:
-                for combination in tqdm(combinations_dicts, desc='Computing causal table...'):
-                    results.append(self._process_combination(combination))
-            else:
-                for combination in combinations_dicts:
-                    results.append(self._process_combination(combination))
-
-        causal_table = pd.DataFrame(results)
-
-        return causal_table
-
-    def _process_combination(self, combination):
+    def _process_combination(self, combination: Dict):
+        # initial_time = time.time()
         try:
             reward_action_values = self._single_query(combination)
         except Exception as e:
-            raise BlockingIOError(e)
+            raise ValueError(e)
 
-        combination[LABEL_reward_action_values] = reward_action_values
-        return combination
+        dict_to_return = {LABEL_reward_action_values: reward_action_values}
+
+        # combination[LABEL_reward_action_values] = reward_action_values
+        # print('Process combination: ', time.time()-initial_time)
+
+        return dict_to_return
 
     def return_reward_action_values(self, input_obs: Dict) -> Dict:
         if self.online:
@@ -459,9 +430,8 @@ class CausalInferenceForRL:
                 self.causal_table = self.create_causal_table(show_progress=True)
 
             if self.obs_train_to_test is not None:
-                kwargs = {}
-                kwargs[LABEL_discrete_intervals] = self.discrete_intervals_bn
-                kwargs[LABEL_grouped_features] = self.grouped_features
+                kwargs = {LABEL_discrete_intervals: self.discrete_intervals_bn,
+                          LABEL_grouped_features: self.grouped_features}
 
                 obs = self.obs_train_to_test(input_obs, **kwargs)
             else:
@@ -479,4 +449,83 @@ class CausalInferenceForRL:
 
         return reward_action_values
 
+    def _create_dataframe_chunk(self, combinations_chunk):
+        # Converts a chunk of combinations into a DataFrame
+        return pd.DataFrame(combinations_chunk)
 
+    def _update_causal_table_chunk(self, chunk):
+        # Process each row in the chunk using a thread pool
+        def process_row(index_row_tuple):
+            _, row = index_row_tuple  # Unpack the tuple to get the row only
+            return self._process_combination(row.to_dict())[LABEL_reward_action_values]
+
+        with ThreadPoolExecutor(max_workers=self.n_threads) as executor:
+            results = list(executor.map(process_row, chunk.iterrows()))  # Apply thread pool to process rows
+
+        chunk[LABEL_reward_action_values] = results  # Assign the results to the chunk
+        return chunk
+
+    def create_causal_table(self, show_progress: bool = False, parallel: bool = True) -> pd.DataFrame:
+        model = self.ci.return_cbn()
+
+        variables = model.nodes()
+        excluded_variables = {"agent_0_reward", "agent_0_action_0", "agent_0_action_1"}
+        state_names = {variable: model.get_cpds(variable).state_names[variable] for variable in variables if
+                       variable not in excluded_variables}
+
+        all_combinations = list(itertools.product(*state_names.values()))
+        total_combinations = len(all_combinations)
+
+        if show_progress:
+            combinations_dicts = [dict(zip(state_names.keys(), combination)) for
+                                  combination in tqdm(all_combinations, total=total_combinations,
+                                                      desc='Generating all possible state-value combinations...')]
+        else:
+            combinations_dicts = [dict(zip(state_names.keys(), combination)) for combination in all_combinations]
+
+        if parallel:
+            n_processes = self.n_processes  # Number of processes to use
+            chunk_size = len(combinations_dicts) // n_processes
+            chunks = [combinations_dicts[i:i + chunk_size] for i in range(0, len(combinations_dicts), chunk_size)]
+
+            initial_time_ct = time.time()
+
+            # Parallel conversion of chunks to DataFrames
+            with Pool(processes=n_processes) as pool:
+                if show_progress:
+                    dataframe_chunks = list(tqdm(pool.imap(self._create_dataframe_chunk, chunks), total=len(chunks),
+                                                 desc='Creating DataFrame chunks...'))
+                else:
+                    dataframe_chunks = pool.map(self._create_dataframe_chunk, chunks)
+
+            causal_table = pd.concat(dataframe_chunks, ignore_index=True)
+
+            # Now update the causal_table in parallel
+            with Pool(processes=n_processes) as pool:
+                if show_progress:
+                    results = list(tqdm(pool.imap(self._update_causal_table_chunk,
+                                                  [causal_table.iloc[i:i + chunk_size] for i in
+                                                   range(0, len(causal_table), chunk_size)]), total=len(chunks),
+                                        desc='Processing chunks...'))
+                else:
+                    results = pool.map(self._update_causal_table_chunk, [causal_table.iloc[i:i + chunk_size] for i in
+                                                                         range(0, len(causal_table), chunk_size)])
+
+            causal_table = pd.concat(results, ignore_index=True)
+
+            final_time = time.time() - initial_time_ct
+            print(f'Computation time: {round(final_time, 2)} sec - {round(total_combinations / final_time, 2)} it/s')
+
+        else:
+            # If not parallel, simply create the DataFrame normally and update it
+            causal_table = pd.DataFrame(combinations_dicts)
+            self._update_causal_table(causal_table)
+
+        return causal_table
+
+    def _update_causal_table(self, causal_table: pd.DataFrame) -> pd.DataFrame:
+        causal_table[LABEL_reward_action_values] = causal_table.progress_apply(
+            lambda row: self._process_combination(row.to_dict())[LABEL_reward_action_values],
+            axis=1
+        )
+        return causal_table

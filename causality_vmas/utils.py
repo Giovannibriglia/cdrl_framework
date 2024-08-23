@@ -1,18 +1,19 @@
-import gc
 import itertools
 import json
 import multiprocessing
 import os
 import pickle
+import platform
 import random
 import re
+import sys
 from decimal import Decimal
 from typing import Dict, Tuple, List, Union
-import platform
-import psutil
+
 import networkx as nx
 import numpy as np
 import pandas as pd
+import psutil
 import seaborn as sns
 import torch
 import yaml
@@ -23,8 +24,8 @@ from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from scipy.spatial.distance import squareform
 from scipy.stats import ks_2samp
 from sklearn.decomposition import PCA
-from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
 
 from causality_vmas import LABEL_kind_group_var, LABEL_value_group_var, LABEL_approximation_parameters, \
     LABEL_dataframe_approximated, LABEL_discrete_intervals, LABEL_grouped_features
@@ -660,8 +661,9 @@ def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
             raise NotImplementedError("The approximation function for this task has not been implemented")
 
         with multiprocessing.Pool(multiprocessing.cpu_count()) as pool:
-            approximations = pool.map(approximator, all_params_list)
-            gc.collect()
+            approximations = list(tqdm(pool.imap(approximator, all_params_list),
+                                       total=len(all_params_list),
+                                       desc='Computing approximations...'))
 
     return approximations
 
@@ -1180,7 +1182,7 @@ def process_singularities(data):
 " ******************************************************************************************************************* "
 
 
-def set_process_and_threads() -> Tuple[int, int]:
+def get_process_and_threads() -> Tuple[int, int]:
     def _get_max_n_threads() -> int:
         # Get the operating system name
         os_name = platform.system()
@@ -1211,7 +1213,38 @@ def set_process_and_threads() -> Tuple[int, int]:
     max_threads = _get_max_n_threads()
     max_processes = os.cpu_count()
 
-    n_threads = min(5000, max_threads)
-    n_processes = min(5, max_processes)
+    percent = 0.75
+
+    n_threads = int(max_threads*percent)
+    n_processes = int(max_processes*percent)
 
     return n_threads, n_processes
+
+
+def get_array_size(array: np.ndarray) -> float:
+
+    dimensions = array.shape
+
+    size_of_element = 4 # float.32
+
+    # Calculate total number of elements
+    total_elements = np.prod(dimensions)
+
+    # Calculate size in bytes
+    size_in_bytes = total_elements * size_of_element
+
+    # Convert to GB
+    size_in_gb = size_in_bytes / (1024 ** 3)
+    return size_in_gb
+
+def get_df_size(df: pd.DataFrame) -> float:
+    # Estimate the size of the DataFrame
+    total_size = sys.getsizeof(df)
+    for col in df.columns:
+        total_size += df[col].apply(sys.getsizeof).sum()
+
+    total_size_gb = total_size / (1024 ** 3)
+
+    print(f"Estimated size of the DataFrame: {total_size_gb:.2f} GB")
+
+    return total_size_gb

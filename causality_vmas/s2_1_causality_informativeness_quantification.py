@@ -1,18 +1,16 @@
 import logging
-import os
-from concurrent.futures import as_completed, ProcessPoolExecutor
 from multiprocessing.pool import ThreadPool
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple
+
 import networkx as nx
 import pandas as pd
-import psutil
 from tqdm import tqdm
 
 from causality_vmas import LABEL_target_value, LABEL_predicted_value, LABEL_grouped_features, LABEL_discrete_intervals
 from causality_vmas.causality_algos import CausalDiscovery, SingleCausalInference
 from causality_vmas.utils import (constraints_causal_graph, _navigation_approximation,
-                                  plot_graph, extract_intervals_from_bn, inverse_approximation_function, bn_to_dict,
-                                  set_process_and_threads)
+                                  extract_intervals_from_bn, inverse_approximation_function, bn_to_dict,
+                                  get_process_and_threads)
 
 show_progress_cd = False
 
@@ -31,7 +29,7 @@ class CausalityInformativenessQuantification:
 
         target_feature = kwargs.get('target_feature', 'reward')
         self.cd_algo = kwargs.get('cd_algo', 'PC')
-        self.n_test_samples = kwargs.get('n_test_samples', 10000)-1
+        self.n_test_samples = kwargs.get('n_test_samples', 10000) - 1
         self.grouped_features = kwargs[LABEL_grouped_features]
 
         self.dict_bn = None
@@ -93,24 +91,20 @@ class CausalityInformativenessQuantification:
 
         tasks = [row.to_dict() for n, row in df_test.iterrows()]
 
-        n_threads, n_processes = set_process_and_threads()
+        n_threads, n_processes = get_process_and_threads()
 
-        try:
-            with ThreadPool(n_threads) as pool:
-                if show_progress:
-                    results = list(tqdm(pool.imap_unordered(self._process_row, tasks), total=len(tasks),
-                                        desc='Inferring causal knowledge...'))
-                else:
-                    results = pool.imap_unordered(self._process_row, tasks)
+        with ThreadPool(n_threads) as pool:
+            if show_progress:
+                results = list(tqdm(pool.imap_unordered(self._process_row, tasks), total=len(tasks),
+                                    desc=f'Inferring causal knowledge with {n_threads} threads in parallel...'))
+            else:
+                results = pool.imap_unordered(self._process_row, tasks)
 
-            for target_value, pred_value in results:
-                self.dict_scores[LABEL_target_value].append(target_value)
-                self.dict_scores[LABEL_predicted_value].append(pred_value)
+        for target_value, pred_value in results:
+            self.dict_scores[LABEL_target_value].append(target_value)
+            self.dict_scores[LABEL_predicted_value].append(pred_value)
 
-        except Exception as e:
-            pool.terminate()
-            logging.error(f'Causal inference assessment failed: {e}')
-#https://stackoverflow.com/questions/57507832/unable-to-allocate-array-with-shape-and-data-type
+    # https://stackoverflow.com/questions/57507832/unable-to-allocate-array-with-shape-and-data-type
     def _process_row(self, row: Dict) -> Tuple[float, float]:
 
         value_target = row[self.target_feature]
