@@ -14,10 +14,9 @@ from causality_vmas.utils import list_to_graph, inverse_approximation_function
 
 
 class CausalActionsFilter:
-    def __init__(self, online: bool, task: str, parallel: bool = False, **kwargs):
+    def __init__(self, online: bool, task: str, **kwargs):
         self.online = online
         self.task = task
-        self.parallel = parallel
         self.path_best = f'./causality_vmas/results_sensitive_analysis_{self.task}/best'
 
         self.df_train, self.causal_graph, self.dict_bn, self.causal_table, self.obs_train_to_test, self.grouped_features = self._get_task_items()

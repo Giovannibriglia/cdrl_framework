@@ -21,7 +21,6 @@ class SensitiveAnalysis:
         self.results = None
 
     def _compute_df_approximations(self) -> List[Dict]:
-        logging.info('Computing approximations')
         list_dict_approx = my_approximation(self.df_original, self.task_name)
         return list_dict_approx
 
@@ -62,8 +61,7 @@ class SensitiveAnalysis:
     def computing_CIQs(self) -> str:
         list_dict_approx = self._compute_df_approximations()
 
-        for dict_approx in list_dict_approx:
-            self._compute_and_save_single_ciq(dict_approx)
+        list(map(lambda dict_approx: self._compute_and_save_single_ciq(dict_approx), list_dict_approx))
 
         return self.dir_save
 

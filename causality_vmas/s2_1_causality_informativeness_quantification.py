@@ -1,8 +1,9 @@
 import logging
-from multiprocessing.pool import ThreadPool
+from multiprocessing.pool import ThreadPool, Pool
 from typing import Dict, Tuple
 
 import networkx as nx
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
@@ -52,6 +53,8 @@ class CausalityInformativenessQuantification:
         else:
             raise ValueError('Target feature is not correct')
 
+        self.n_threads, self.n_processes = get_process_and_threads()
+
     def evaluate(self) -> Tuple[Dict, nx.DiGraph, Dict]:
         self.dict_scores = {LABEL_target_value: [], LABEL_predicted_value: []}
         self.causal_graph = self.causal_graph if self.causal_graph is not None else nx.DiGraph()
@@ -63,7 +66,11 @@ class CausalityInformativenessQuantification:
             logging.error(f'Causal discovery error: {e}')
             return self.dict_scores, self.causal_graph, self.dict_bn
 
+        # try:
         self.ci_assessment(show_progress=True)
+        """except Exception as e:
+            logging.error(f'Causal inference assessment failed: {e}')"""
+
         return self.dict_scores, self.causal_graph, self.dict_bn
 
     def cd_process(self):
@@ -75,7 +82,6 @@ class CausalityInformativenessQuantification:
         # plot_graph(self.causal_graph, title='', if_show=True)
 
     def ci_assessment(self, show_progress: bool = False):
-
         logging.info(f'Setting up causal bayesian network...')
         try:
             self.ci = SingleCausalInference(self.df_approx, self.causal_graph)
@@ -91,14 +97,18 @@ class CausalityInformativenessQuantification:
 
         tasks = [row.to_dict() for n, row in df_test.iterrows()]
 
-        n_threads, n_processes = get_process_and_threads()
-
-        with ThreadPool(n_threads) as pool:
+        with Pool(self.n_processes) as pool:
             if show_progress:
-                results = list(tqdm(pool.imap_unordered(self._process_row, tasks), total=len(tasks),
-                                    desc=f'Inferring causal knowledge with {n_threads} threads in parallel...'))
+                results = list(
+                    pool.map(self._process_row, tqdm(tasks, total=len(tasks),
+                                                     desc=f'Inferring causal knowledge with {self.n_processes} processes in parallel...')))
             else:
-                results = pool.imap_unordered(self._process_row, tasks)
+                results = list(pool.map(self._process_row, tasks))
+        """
+        if show_progress:
+            results = list(map(self._process_row, tqdm(tasks, total=len(tasks), desc='Inferring causal knowledge...')))
+        else:
+            results = list(map(self._process_row, tasks))"""
 
         for target_value, pred_value in results:
             self.dict_scores[LABEL_target_value].append(target_value)
@@ -120,11 +130,14 @@ class CausalityInformativenessQuantification:
             obs = input_obs
 
         evidence = obs.copy()
-        output_distribution = self.ci.infer(obs, self.target_feature, evidence)
+        try:
+            output_distribution = self.ci.infer(obs, self.target_feature, evidence)
 
-        value_pred = max(output_distribution, key=output_distribution.get)
-        value_pred = float(value_pred)
-        value_pred = type(value_target)(value_pred)
+            value_pred = max(output_distribution, key=output_distribution.get)
+            value_pred = float(value_pred)
+            value_pred = type(value_target)(value_pred)
+        except Exception as e:
+            value_pred = np.NaN
 
         return value_target, value_pred
 

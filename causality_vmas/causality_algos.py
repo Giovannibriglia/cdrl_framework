@@ -459,19 +459,20 @@ class CausalInferenceForRL:
         else:
             return pd.DataFrame(combinations_chunk)
 
-    def _process_row(self, row):
-        return self._process_combination(row.to_dict())[LABEL_reward_action_values]
+    def _process_row(self, row: Dict):
+        return self._process_combination(row)[LABEL_reward_action_values]
 
     def _update_causal_table_chunk(self, chunk: pd.DataFrame, show_progress: bool) -> pd.DataFrame:
+        tasks = [row.to_dict() for _, row in chunk.iterrows()]
         if show_progress:
             with Pool(self.n_processes) as pool:
-                results = list(
-                    pool.map(self._process_row, tqdm((row for _, row in chunk.iterrows()), total=len(chunk),
-                                                     desc='Single chunk computation...')))
+                results = list(pool.map(self._process_row, tqdm(tasks,
+                                                                total=len(chunk),
+                                                                desc='Single chunk computation...')))
         else:
-            results = list(map(self._process_row, (row for _, row in chunk.iterrows())))
+            results = list(map(self._process_row, tasks))
 
-        chunk[LABEL_reward_action_values] = results  # Assign the results to the chunk
+        chunk[LABEL_reward_action_values] = results
         return chunk
 
     def _process_chunk(self, chunk: List, show_progress: bool):

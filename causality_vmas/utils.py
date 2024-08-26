@@ -298,24 +298,21 @@ def constraints_causal_graph(causal_graph: nx.DiGraph):
 " ******************************************************************************************************************** "
 
 
-def values_to_bins(values: List[float], intervals: List[float]) -> List[int]:
-    # Sort intervals to ensure they are in ascending order
-    intervals = sorted(intervals)
+def find_bin(value: int, intervals: List[float]) -> int:
+    if value == intervals[-1]:
+        return len(intervals) - 2
+    return next(i for i in range(len(intervals) - 1) if intervals[i] <= value < intervals[i + 1])
 
-    # Initialize the list to store the bin index for each value
-    new_values = []
 
-    # Iterate through each value and determine its bin
-    for value in values:
-        for i in range(len(intervals) - 1):
-            if intervals[i] <= value < intervals[i + 1]:
-                new_values.append(i)
-                break
-        # To handle the case where the value is exactly equal to the last interval's end
-        if value == intervals[-1]:
-            new_values.append(len(intervals) - 2)
+def values_to_bins(values: List, intervals: List) -> List[int]:
+    # Assuming intervals is a list where the first element is a label and the second is the list of floats
+    label, interval_values = intervals
 
-    return new_values
+    # Sort only the interval values
+    sorted_intervals = sorted(interval_values)  # Ensure intervals are in ascending order
+
+    # Now apply the find_bin function using the sorted intervals
+    return list(map(lambda value: find_bin(value, sorted_intervals), values))
 
 
 def discretize_value(value: int | float, intervals: List) -> int | float:
@@ -345,57 +342,74 @@ def _create_intervals(min_val: int | float, max_val: int | float, n_intervals: i
     return list(intervals)
 
 
+def check_discretization(df: pd.DataFrame, col: str, n_bins: int, not_discretize_these: List):
+    unique_values = df[col].unique()
+    if len(unique_values) > n_bins and col not in not_discretize_these:
+        print(f'*** {n_bins} bins) Discretization problem in {col}: {len(unique_values)}, {unique_values} ***')
+
+
+def discretize_column(column, intervals):
+    return column.apply(lambda x: discretize_value(x, intervals))
+
+
 def discretize_dataframe(df: pd.DataFrame, n_bins: int = 50, scale='linear', not_discretize_these: List = None):
-    discrete_df = df.copy()
-    variable_discrete_intervals = {}
-    for column in df.columns:
-        if column not in not_discretize_these:
-            min_value = df[column].min()
-            max_value = df[column].max()
+    not_discretize_these = not_discretize_these or []
+
+    def process_column(column):
+        if column.name not in not_discretize_these:
+            min_value = column.min()
+            max_value = column.max()
             intervals = _create_intervals(min_value, max_value, n_bins, scale)
-            variable_discrete_intervals[column] = intervals
-            discrete_df[column] = df[column].apply(lambda x: discretize_value(x, intervals))
-            # discrete_df[column] = np.vectorize(lambda x: intervals[_discretize_value(x, intervals)])(df[column])
+            return discretize_column(column, intervals), (column.name, intervals)
+        return column, None
+
+    results = [process_column(df[col]) for col in df.columns]
+
+    discrete_df = pd.DataFrame({col: res[0] for col, res in zip(df.columns, results)})
+    variable_discrete_intervals = {col: res[1] for col, res in zip(df.columns, results) if res[1] is not None}
+
     return discrete_df, variable_discrete_intervals
 
 
 def group_row_variables(input_obs: Union[Dict, List], variable_columns: list, N: int = 1) -> Dict:
-    obs = input_obs.copy()
+    def get_row_dict(obs, variable_columns):
+        return {i: obs[i] for i in variable_columns} if isinstance(obs, list) else {col: obs[col] for col in
+                                                                                    variable_columns}
 
-    if isinstance(obs, list):
-        row_dict = {i: obs[i] for i in variable_columns}
-        is_list = True
-    else:
-        row_dict = {col: obs[col] for col in variable_columns}
-        is_list = False
-
-    sorted_variables = sorted(row_dict.items(), key=lambda x: x[1], reverse=True)[:N]
-    obs_grouped = {}
-
-    for i, (variable_name, variable_value) in enumerate(sorted_variables):
+    def process_variable(i, variable_name, variable_value):
         try:
             variable_number = ''.join(filter(str.isdigit, str(variable_name)))
-            obs_grouped[f'{LABEL_kind_group_var}_{i}'] = int(variable_number)
-            obs_grouped[f'{LABEL_value_group_var}_{i}'] = variable_value
-            # Remove the grouped part from the original observation
-            if not is_list:
-                del obs[variable_name]
-            else:
-                obs[variable_columns[i]] = None
+            kind_key = f'{LABEL_kind_group_var}_{i}'
+            value_key = f'{LABEL_value_group_var}_{i}'
+            return {
+                kind_key: int(variable_number),
+                value_key: variable_value,
+            }
         except (IndexError, ValueError):
-            obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
-            obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
+            return {
+                f'{LABEL_kind_group_var}_{i}': None,
+                f'{LABEL_value_group_var}_{i}': None,
+            }
+
+    def remove_variable_columns(obs, variable_columns):
+        if not isinstance(obs, list):
+            return {k: v for k, v in obs.items() if k not in variable_columns}
+        else:
+            return [None if i in variable_columns else v for i, v in enumerate(obs)]
+
+    obs = input_obs.copy()
+    row_dict = get_row_dict(obs, variable_columns)
+    sorted_variables = sorted(row_dict.items(), key=lambda x: x[1], reverse=True)[:N]
+
+    obs_grouped = {k: v for d in [process_variable(i, k, v) for i, (k, v) in enumerate(sorted_variables)] for k, v in
+                   d.items()}
 
     # Add empty groups if N is greater than the number of sorted variables
     for i in range(len(sorted_variables), N):
         obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
         obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
 
-    # Remove the variable_columns from the original observation
-    if not is_list:
-        for col in variable_columns:
-            if col in obs:
-                del obs[col]
+    obs = remove_variable_columns(obs, variable_columns)
 
     # Combine the remaining original observation and grouped parts
     combined_obs = {**obs, **obs_grouped}
@@ -451,10 +465,7 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
 
     new_df = df.loc[:n_rows - 1, :]
 
-    for col in new_df.columns.to_list():
-        if len(new_df[col].unique()) > n_bins and col not in not_discretize_these:
-            print(
-                f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
+    map(lambda col: check_discretization(new_df, col, n_bins, not_discretize_these), new_df.columns.to_list())
 
     approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rays': n_rays, 'n_rows': n_rows},
                    LABEL_discrete_intervals: discrete_intervals,
@@ -491,10 +502,7 @@ def _discovery_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
 
     new_df = df.loc[:n_rows - 1, :]
 
-    for col in new_df.columns.to_list():
-        if len(new_df[col].unique()) > n_bins and col not in not_discretize_these:
-            print(
-                f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
+    map(lambda col: check_discretization(new_df, col, n_bins, not_discretize_these), new_df.columns.to_list())
 
     approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rays': n_rays, 'n_rows': n_rows},
                    LABEL_discrete_intervals: discrete_intervals,
@@ -532,10 +540,7 @@ def _flocking_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
 
     new_df = df.loc[:n_rows - 1, :]
 
-    for col in new_df.columns.to_list():
-        if len(new_df[col].unique()) > n_bins and col not in not_discretize_these:
-            print(
-                f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
+    map(lambda col: check_discretization(new_df, col, n_bins, not_discretize_these), new_df.columns.to_list())
 
     approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rays': n_rays, 'n_rows': n_rows},
                    LABEL_discrete_intervals: discrete_intervals,
@@ -567,10 +572,7 @@ def _give_way_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
 
     new_df = df.loc[:n_rows - 1, :]
 
-    for col in new_df.columns.to_list():
-        if len(new_df[col].unique()) > n_bins and col not in not_discretize_these:
-            print(
-                f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
+    map(lambda col: check_discretization(new_df, col, n_bins, not_discretize_these), new_df.columns.to_list())
 
     approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rows': n_rows},
                    LABEL_discrete_intervals: discrete_intervals,
@@ -606,10 +608,7 @@ def _balance_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
 
     new_df = df.loc[:n_rows - 1, :]
 
-    for col in new_df.columns.to_list():
-        if len(new_df[col].unique()) > n_bins and col not in not_discretize_these:
-            print(
-                f'*** {n_bins} bins) Discretization problem in {col}: {len(new_df[col].unique())}, {new_df[col].unique()} *** ')
+    map(lambda col: check_discretization(new_df, col, n_bins, not_discretize_these), new_df.columns.to_list())
 
     approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rows': n_rows},
                    LABEL_discrete_intervals: discrete_intervals,
@@ -660,10 +659,9 @@ def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
         else:
             raise NotImplementedError("The approximation function for this task has not been implemented")
 
-        with multiprocessing.Pool(multiprocessing.cpu_count()) as pool:
-            approximations = list(tqdm(pool.imap(approximator, all_params_list),
-                                       total=len(all_params_list),
-                                       desc='Computing approximations...'))
+        approximations = list(map(approximator, tqdm(all_params_list,
+                                                      total=len(all_params_list),
+                                                      desc='Computing approximations...')))
 
     return approximations
 
@@ -1215,17 +1213,16 @@ def get_process_and_threads() -> Tuple[int, int]:
 
     percent = 0.75
 
-    n_threads = int(max_threads*percent)
-    n_processes = int(max_processes*percent)
+    n_threads = int(max_threads * percent)
+    n_processes = int(max_processes * percent)
 
     return n_threads, n_processes
 
 
 def get_array_size(array: np.ndarray) -> float:
-
     dimensions = array.shape
 
-    size_of_element = 4 # float.32
+    size_of_element = 4  # float.32
 
     # Calculate total number of elements
     total_elements = np.prod(dimensions)
@@ -1236,6 +1233,7 @@ def get_array_size(array: np.ndarray) -> float:
     # Convert to GB
     size_in_gb = size_in_bytes / (1024 ** 3)
     return size_in_gb
+
 
 def get_df_size(df: pd.DataFrame) -> float:
     # Estimate the size of the DataFrame
