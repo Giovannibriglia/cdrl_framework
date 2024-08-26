@@ -1,8 +1,6 @@
 # TODO:
-    -
+    - finish setup of creation causal table offline
     - launch big simulations: causal iql vs iql benchmarl vs ippo benchmarl
-    - try to use other environments: transport, sampling...
-    - be sure of env and task generalization of the code
 
 
 source MyEnv/bin/activate

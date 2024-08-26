@@ -502,7 +502,7 @@ class CausalInferenceForRL:
 
         del all_combinations
 
-        if parallel:
+        """        if parallel:
             n_processes = self.n_processes
 
             # Determine chunk size
@@ -521,9 +521,9 @@ class CausalInferenceForRL:
             # Concatenate the updated chunks into the final causal table
             causal_table = pd.concat(updated_chunks, ignore_index=True, copy=False)
 
-        else:
-            # If not parallel, create the DataFrame normally and update it
-            causal_table = self._create_dataframe_chunk(combinations_dicts, show_progress)
-            causal_table = self._update_causal_table_chunk(causal_table, show_progress, parallel)
+        else:"""
+        # If not parallel, create the DataFrame normally and update it
+        causal_table = self._create_dataframe_chunk(combinations_dicts, show_progress)
+        causal_table = self._update_causal_table_chunk(causal_table, show_progress, parallel)
 
         return causal_table
