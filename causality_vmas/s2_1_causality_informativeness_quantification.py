@@ -114,7 +114,8 @@ class CausalityInformativenessQuantification:
             self.dict_scores[LABEL_target_value].append(target_value)
             self.dict_scores[LABEL_predicted_value].append(pred_value)
 
-    # https://stackoverflow.com/questions/57507832/unable-to-allocate-array-with-shape-and-data-type
+        return
+
     def _process_row(self, row: Dict) -> Tuple[float, float]:
 
         value_target = row[self.target_feature]
@@ -142,6 +143,7 @@ class CausalityInformativenessQuantification:
         return value_target, value_pred
 
 
+# https://stackoverflow.com/questions/57507832/unable-to-allocate-array-with-shape-and-data-type
 def main(task: str):
     task = task.lower()
 

@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing.pool import ThreadPool
+from multiprocessing import Pool
 from typing import Dict, List, Union, Tuple
 import os
 import numpy as np
@@ -49,15 +49,13 @@ class CausalActionsFilter:
         return df_train, causal_graph, dict_bn, causal_table, obs_train_to_test, grouped_features
 
     def _init_causal_inference_agents(self, n_envs: int, n_agents: int):
-        if self.parallel:
-            n = min(10, max(n_envs, n_agents))
-        else:
-            n = 1
+        n = 1 # min(10, max(n_envs, n_agents))
 
-        self.ci_agents = [CausalInferenceForRL(online=self.online, df_train=self.df_train, causal_graph=self.causal_graph,
-                                               bn_dict=self.dict_bn, causal_table=self.causal_table,
-                                               obs_train_to_test=self.obs_train_to_test,
-                                               grouped_features=self.grouped_features) for _ in range(n)]
+        self.ci_agents = [
+            CausalInferenceForRL(online=self.online, df_train=self.df_train, causal_graph=self.causal_graph,
+                                 bn_dict=self.dict_bn, causal_table=self.causal_table,
+                                 obs_train_to_test=self.obs_train_to_test,
+                                 grouped_features=self.grouped_features) for _ in range(n)]
 
     def get_actions(self, multiple_observation: Union[List, torch.Tensor]) -> Union[List, torch.Tensor]:
         def validate_input(observation):
@@ -76,20 +74,6 @@ class CausalActionsFilter:
 
         def initialize_actions_to_discard(num_envs, num_agents):
             return {env_index: {agent_index: [] for agent_index in range(num_agents)} for env_index in range(num_envs)}
-
-        def calculate_delta_obs_continuous(current_obs, last_obs):
-            return {f'agent_0_obs_{key}': (curr_obs - last_obs[key]) for key, curr_obs in enumerate(current_obs)}
-
-        def process_env_agent(env_idx, agent_idx, current_obs_continuous, causal_inference_agent):
-            actions_to_discard = []
-            if self.last_obs_continuous[env_idx][agent_idx] is not None:
-                delta_obs_continuous = calculate_delta_obs_continuous(current_obs_continuous,
-                                                                      self.last_obs_continuous[env_idx][agent_idx])
-                reward_action_values = causal_inference_agent.return_reward_action_values(delta_obs_continuous)
-                action_reward_scores = self._weight_actions_rewards(reward_action_values)
-                actions_to_discard = self._actions_mask_filter(action_reward_scores)
-            self.last_obs_continuous[env_idx][agent_idx] = current_obs_continuous
-            return env_idx, agent_idx, actions_to_discard
 
         def convert_actions_to_input_type(actions_to_discard, input_type):
             if input_type is list:
@@ -111,47 +95,84 @@ class CausalActionsFilter:
 
         actions_to_discard = initialize_actions_to_discard(num_envs, num_agents)
 
-        with ThreadPoolExecutor() as pool:
-            tasks = [
-                (env_idx, agent_idx, multiple_observation[env_idx, agent_idx],
-                 self.ci_agents[(env_idx * num_agents + agent_idx) % len(self.ci_agents)])
-                for env_idx in range(num_envs) for agent_idx in range(num_agents)
-            ]
+        tasks = [
+            (env_idx, agent_idx, multiple_observation[env_idx, agent_idx],
+             self.ci_agents[(env_idx * num_agents + agent_idx) % len(self.ci_agents)])
+            for env_idx in range(num_envs) for agent_idx in range(num_agents)
+        ]
 
-            results = pool.map(lambda args: process_env_agent(*args), tasks)
+        # with ThreadPoolExecutor() as pool:
+        #with Pool(15) as pool:
+            # results = pool.map(self.process_env_agent_helper, tasks)
 
+        results = list(map(self.process_env_agent_helper, tasks))
         for env_idx, agent_idx, result in results:
             actions_to_discard[env_idx][agent_idx] = result
 
         return convert_actions_to_input_type(actions_to_discard, input_type)
 
+    def process_env_agent_helper(self, args):
+        return self.process_env_agent(*args)
+
+    @staticmethod
+    def calculate_delta_obs_continuous(current_obs, last_obs):
+        return {f'agent_0_obs_{key}': (curr_obs - last_obs[key]) for key, curr_obs in enumerate(current_obs)}
+
+    def process_env_agent(self, env_idx, agent_idx, current_obs_continuous, causal_inference_agent):
+        actions_to_discard = []
+        if self.last_obs_continuous[env_idx][agent_idx] is not None:
+            delta_obs_continuous = self.calculate_delta_obs_continuous(current_obs_continuous,
+                                                                  self.last_obs_continuous[env_idx][agent_idx])
+            reward_action_values = causal_inference_agent.return_reward_action_values(delta_obs_continuous)
+            action_reward_scores = self._weight_actions_rewards(reward_action_values)
+            actions_to_discard = self._actions_mask_filter(action_reward_scores)
+        self.last_obs_continuous[env_idx][agent_idx] = current_obs_continuous
+        return env_idx, agent_idx, actions_to_discard
+
     @staticmethod
     def _weight_actions_rewards(reward_action_values: Dict) -> Dict:
         def rescale_reward(past_value: float, old_min: float, old_max: float, new_min: float = 0.0,
                            new_max: float = 1.0):
-            new_value = new_min + ((past_value - old_min) / (old_max - old_min)) * (new_max - new_min)
-            return new_value
+            if old_max == old_min:
+                return new_min  # or return past_value if no rescaling is needed
+            return new_min + ((past_value - old_min) / (old_max - old_min)) * (new_max - new_min)
 
         all_rewards = list(reward_action_values.keys())
-
         old_min = float(min(all_rewards))
         old_max = float(max(all_rewards))
 
-        averaged_mean_dict = {}
-        # print('\n Reward action values: ', reward_action_values)
-        for reward_value, action_dict in reward_action_values.items():
-            for action, prob in action_dict.items():
-                if action not in averaged_mean_dict:
-                    averaged_mean_dict[action] = 0
-                try:
-                    averaged_mean_dict[action] += prob * rescale_reward(reward_value, old_min, old_max)
-                except Exception as e:
-                    # print(e)
-                    pass
-        # print('Average mean dict: ', averaged_mean_dict)
+        def process_action(reward_value, action_prob_pair):
+            action, prob = action_prob_pair
+            # Ensure prob is a float and not a dictionary or other type
+            if isinstance(prob, dict):
+                # Handle the case where prob is a dict, e.g., sum the probabilities or extract a specific value
+                prob = sum(prob.values())  # Example: summing all values in the dict
+            return action, prob * rescale_reward(reward_value, old_min, old_max)
+
+        # Flatten the dictionary into a list of tuples: (action, weighted_reward)
+        flattened_action_rewards = [
+            process_action(reward_value, action_prob_pair)
+            for reward_value, action_dict in reward_action_values.items()
+            for action_prob_pair in action_dict.items()
+        ]
+
+        # Initialize an empty dictionary to hold the aggregated sums
+        aggregated_sums = {}
+
+        # Aggregate the results manually
+        for action, weighted_reward in flattened_action_rewards:
+            if action in aggregated_sums:
+                aggregated_sums[action] += weighted_reward
+            else:
+                aggregated_sums[action] = weighted_reward
+
         num_reward_entries = len(reward_action_values)
-        for action in averaged_mean_dict:
-            averaged_mean_dict[action] = round(averaged_mean_dict[action] / num_reward_entries, 4)
+
+        # Final averaging step
+        averaged_mean_dict = {
+            action: round(total / num_reward_entries, 4)
+            for action, total in aggregated_sums.items()
+        }
 
         return averaged_mean_dict
 
@@ -162,16 +183,24 @@ class CausalActionsFilter:
         values = list(ordered_action_reward_scores.values())
         percentile_25 = np.percentile(values, 25)
 
-        actions_mask = []
-        for key, value in ordered_action_reward_scores.items():
-            actions_mask.append(0) if value <= percentile_25 else actions_mask.append(1)
+        actions_mask = [
+            0 if value <= percentile_25
+            else 1
+            for key, value in ordered_action_reward_scores.items()
+        ]
+
+        if all(x == 0 for x in actions_mask):
+            actions_mask = list(map(lambda value: 0 if value <= 0 else 1, ordered_action_reward_scores.values()))
+            if all(x == 0 for x in actions_mask):
+                actions_mask = [1] * len(actions_mask)
+
+        # print(f'\n {ordered_action_reward_scores} - {actions_mask}')
 
         return actions_mask
 
 
-def main(task: str):
-    online = True
-    cd_actions_filter = CausalActionsFilter(online, task, parallel=False)
+def main(task: str, online: bool):
+    cd_actions_filter = CausalActionsFilter(online, task)
 
     df_test = pd.read_pickle(f'./causality_vmas/dataframes/df_{task}_pomdp_discrete_actions_0.pkl')
     agent0_columns = [col for col in df_test.columns if
@@ -184,12 +213,14 @@ def main(task: str):
         # Convert the row to a list of values and then to a PyTorch tensor
         input_row = torch.tensor(row.values)
         input_row = input_row.unsqueeze(0).unsqueeze(0)  # Adds two dimensions of size 1
-        # Repeat the tensor to obtain a size of 10, 3, 18
+        # Repeat the tensor to obtain a size of 10, 3, X
         input_row_repeated = input_row.repeat(10, 3, 1)
         in_time = time.time()
         mask = cd_actions_filter.get_actions(input_row_repeated)
-        print(f'Single timestep: computation time for action mask : {round(time.time() - in_time, 3)} secs - {mask}')
+        print(f'Single timestep: computation time for action mask : {round(time.time() - in_time, 3)} secs')
+        # print(f'Single timestep: computation time for action mask : {round(time.time() - in_time, 3)} secs - {mask}')
 
 
 if __name__ == '__main__':
-    main('flocking')
+    task = str(input('Select task: ')).lower()
+    main(task, True)

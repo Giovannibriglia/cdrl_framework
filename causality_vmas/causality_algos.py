@@ -1,13 +1,9 @@
 import itertools
-import logging
-import math
 import random
 import re
 import time
 import warnings
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
-from multiprocessing import Pool, Manager, Lock, Value
+from multiprocessing import Pool
 from typing import Dict, Tuple, List
 
 import causalnex
@@ -25,11 +21,7 @@ from tqdm import tqdm
 from causality_vmas import LABEL_reward_action_values, LABEL_discrete_intervals, LABEL_grouped_features
 from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn, get_process_and_threads
 
-tqdm.pandas()
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pgmpy.factors.discrete")
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(processName)s - %(message)s')
 
 
 class CausalDiscovery:
@@ -236,7 +228,7 @@ class SingleCausalInference:
             self.cbn.fit(self.df, estimator=MaximumLikelihoodEstimator)
         else:
             self.cbn = dict_to_bn(dict_init_cbn)
-
+        del dict_init_cbn
         assert self.cbn.check_model()
 
         self.ci = CausalInference(self.cbn)
@@ -325,19 +317,21 @@ class CausalInferenceForRL:
 
         self.df_train = df_train
         self.causal_graph = causal_graph
-        self.dict_bn = bn_dict
+        self.bn_dict = bn_dict
 
         self.obs_train_to_test = obs_train_to_test
 
-        self.ci = SingleCausalInference(df_train, causal_graph, bn_dict)
+        del df_train, causal_graph, bn_dict
+
+        self.ci = SingleCausalInference(self.df_train, self.causal_graph, self.bn_dict)
         cbn = self.ci.return_cbn()
         self.discrete_intervals_bn = extract_intervals_from_bn(cbn)
 
         self.grouped_features = grouped_features
 
-        self.reward_variable = [s for s in df_train.columns.to_list() if 'reward' in s][0]
+        self.reward_variable = [s for s in self.df_train.columns.to_list() if 'reward' in s][0]
         self.reward_values = self.df_train[self.reward_variable].unique().tolist()
-        self.action_variable = [s for s in df_train.columns.to_list() if 'action' in s][0]
+        self.action_variable = [s for s in self.df_train.columns.to_list() if 'action' in s][0]
         self.action_values = self.df_train[self.action_variable].unique().tolist()
 
         self.causal_table = causal_table
@@ -424,6 +418,7 @@ class CausalInferenceForRL:
                 obs = input_obs
 
             filtered_df = self.causal_table.copy()
+            # TODO: try to speed-up with smart search
             for feature, value in obs.items():
                 filtered_df = filtered_df[filtered_df[feature] == value]
 
@@ -435,7 +430,7 @@ class CausalInferenceForRL:
 
         return reward_action_values
 
-    def _process_combination(self, combination: Dict):
+    def _process_combination(self, combination: Dict) -> Dict:
         # initial_time = time.time()
         try:
             reward_action_values = self._single_query(combination)
@@ -449,42 +444,45 @@ class CausalInferenceForRL:
 
         return dict_to_return
 
-    def _create_dataframe_chunk(self, combinations_chunk: List, show_progress: bool):
+    @staticmethod
+    def _create_dataframe_chunk(combinations_chunk: List, show_progress: bool) -> pd.DataFrame:
         if show_progress:
-            # Assuming combinations_chunk is an iterable or generator of combinations
             combinations_list = list(tqdm(combinations_chunk, desc="Processing single combination..."))
-
-            # Now create the DataFrame from the list
             return pd.DataFrame(combinations_list)
         else:
             return pd.DataFrame(combinations_chunk)
 
-    def _process_row(self, row: Dict):
-        return self._process_combination(row)[LABEL_reward_action_values]
+    def _process_row(self, row: pd.Series) -> Dict:
+        return self._process_combination(row.to_dict())[LABEL_reward_action_values]
 
-    def _update_causal_table_chunk(self, chunk: pd.DataFrame, show_progress: bool) -> pd.DataFrame:
-        tasks = [row.to_dict() for _, row in chunk.iterrows()]
-        if show_progress:
-            with Pool(self.n_processes) as pool:
-                results = list(pool.map(self._process_row, tqdm(tasks,
-                                                                total=len(chunk),
-                                                                desc='Single chunk computation...')))
+    def _update_causal_table_chunk(self, chunk: pd.DataFrame, show_progress: bool, parallel: bool) -> pd.DataFrame:
+        if parallel:
+            if show_progress:
+                with Pool(self.n_processes) as pool:
+                    results = list(pool.map(self._process_row, tqdm((row for _, row in chunk.iterrows()),
+                                                                    total=len(chunk),
+                                                                    desc='Single chunk computation...')))
+            else:
+                with Pool(self.n_processes) as pool:
+                    results = list(pool.map(self._process_row, (row for _, row in chunk.iterrows())))
         else:
-            results = list(map(self._process_row, tasks))
+            if show_progress:
+                results = list(map(self._process_row, tqdm((row for _, row in chunk.iterrows()),
+                                                           total=len(chunk),
+                                                           desc='Single chunk computation...')))
+            else:
+                results = list(map(self._process_row, (row for _, row in chunk.iterrows())))
 
         chunk[LABEL_reward_action_values] = results
         return chunk
 
-    def _process_chunk(self, chunk: List, show_progress: bool):
-        # Step 1: Create DataFrame from chunk
+    def _process_chunk(self, chunk: List, show_progress: bool, parallel: bool) -> pd.DataFrame:
         df_chunk = self._create_dataframe_chunk(chunk, show_progress)
+        df_chunk = self._update_causal_table_chunk(df_chunk, show_progress, parallel)
 
-        # Step 2: Update the DataFrame chunk
-        updated_chunk = self._update_causal_table_chunk(df_chunk, show_progress)
+        return df_chunk
 
-        return updated_chunk
-
-    def create_causal_table(self, show_progress: bool = False, parallel: bool = True) -> pd.DataFrame:
+    def create_causal_table(self, show_progress: bool = True, parallel: bool = True) -> pd.DataFrame:
         model = self.ci.return_cbn()
 
         variables = model.nodes()
@@ -502,8 +500,10 @@ class CausalInferenceForRL:
         else:
             combinations_dicts = [dict(zip(state_names.keys(), combination)) for combination in all_combinations]
 
+        del all_combinations
+
         if parallel:
-            n_processes = self.n_processes  # Number of processes to use
+            n_processes = self.n_processes
 
             # Determine chunk size
             chunk_size = len(combinations_dicts) // n_processes
@@ -515,16 +515,15 @@ class CausalInferenceForRL:
 
             # Create and update chunks in parallel
             with Pool(processes=n_processes) as pool:
-                updated_chunks = pool.starmap(self._process_chunk, [(chunk, show_progress) for chunk in chunks])
-
+                updated_chunks = pool.starmap(self._process_chunk,
+                                              [(chunk, show_progress, parallel) for chunk in chunks])
+            # TODO: try better concat (sharding for database -> master database suggests where is something)
             # Concatenate the updated chunks into the final causal table
-            causal_table = pd.concat(updated_chunks, ignore_index=True)
+            causal_table = pd.concat(updated_chunks, ignore_index=True, copy=False)
 
         else:
             # If not parallel, create the DataFrame normally and update it
             causal_table = self._create_dataframe_chunk(combinations_dicts, show_progress)
-            # self._update_causal_table(causal_table)
-            causal_table = self._update_causal_table_chunk(causal_table, show_progress)
-            # causal_table = pd.concat(results, ignore_index=True)
+            causal_table = self._update_causal_table_chunk(causal_table, show_progress, parallel)
 
         return causal_table

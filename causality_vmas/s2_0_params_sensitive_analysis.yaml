@@ -21,3 +21,4 @@ give_way:
 balance:
       n_rows: [ 25000, 100000 ]
       n_bins: [ 10, 15, 20 ]
+

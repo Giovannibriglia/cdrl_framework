@@ -51,13 +51,13 @@ def main(task_name: str):
         online = False
         causal_table = None
         obs_train_to_test = inverse_approximation_function(task_name)
+        # TODO: check if some variables can be removed (profiling...)
 
         if (df_approx is not None and causal_graph is not None) or bn_dict is not None:
             offline_ci = CausalInferenceForRL(online, df_approx, causal_graph, bn_dict, causal_table,
                                               obs_train_to_test, grouped_features)
             ct = offline_ci.create_causal_table(show_progress=True)
             ct.to_pickle(f'{path_file}/causal_table.pkl')
-            ct.to_excel(f'{path_file}/causal_table.xlsx')
         else:
             print('some files are empty')
     else:
