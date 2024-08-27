@@ -222,5 +222,5 @@ def main(task: str, online: bool):
 
 
 if __name__ == '__main__':
-    task = str(input('Select task: ')).lower()
-    main(task, True)
+    task_name = str(input('Select task: ')).lower()
+    main(task_name, True)

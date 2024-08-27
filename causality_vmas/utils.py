@@ -1,6 +1,6 @@
 import itertools
 import json
-import multiprocessing
+import glob
 import os
 import pickle
 import platform
@@ -9,7 +9,6 @@ import re
 import sys
 from decimal import Decimal
 from typing import Dict, Tuple, List, Union
-
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -1218,7 +1217,7 @@ def get_process_and_threads() -> Tuple[int, int]:
 
     return n_threads, n_processes
 
-
+" ******************************************************************************************************************* "
 def get_array_size(array: np.ndarray) -> float:
     dimensions = array.shape
 
@@ -1246,3 +1245,48 @@ def get_df_size(df: pd.DataFrame) -> float:
     print(f"Estimated size of the DataFrame: {total_size_gb:.2f} GB")
 
     return total_size_gb
+
+" ******************************************************************************************************************* "
+
+def concat_and_cleanup_parquet_files(directory: str, pattern: str, output_file: str):
+    """
+    Concatenates all Parquet files matching a pattern in a directory into a single Parquet file,
+    and deletes the original files after processing.
+
+    Args:
+    - directory (str): The directory where the Parquet files are located.
+    - pattern (str): The pattern to match the files (e.g., 'ct_*.parquet').
+    - output_file (str): The path where the final concatenated Parquet file will be saved.
+
+    Returns:
+    - None
+    """
+    # Create the full pattern for matching files
+    full_pattern = os.path.join(directory, pattern)
+    print(full_pattern)
+    # Find all files that match the pattern
+    files = glob.glob(full_pattern)
+
+    # Initialize a list to store DataFrames
+    dataframes = []
+
+    # Process each file
+    for file in files:
+        # Read the Parquet file into a DataFrame
+        df = pd.read_parquet(file)
+
+        # Append the DataFrame to the list
+        dataframes.append(df)
+
+        # Delete the file after reading
+        os.remove(file)
+        print(f"Processed and deleted: {file}")
+
+    # Concatenate all DataFrames into a single DataFrame
+    final_df = pd.concat(dataframes, ignore_index=True)
+
+    # Save the final DataFrame to a new Parquet file
+    final_df.to_parquet(output_file)
+    print(f"Saved concatenated DataFrame to {output_file}")
+
+    return final_df

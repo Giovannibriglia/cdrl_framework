@@ -1,7 +1,6 @@
 import itertools
 import random
 import re
-import time
 import warnings
 from multiprocessing import Pool
 from typing import Dict, Tuple, List
@@ -19,7 +18,8 @@ from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm import tqdm
 
 from causality_vmas import LABEL_reward_action_values, LABEL_discrete_intervals, LABEL_grouped_features
-from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn, get_process_and_threads
+from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn, get_process_and_threads, \
+    concat_and_cleanup_parquet_files
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pgmpy.factors.discrete")
 
@@ -473,16 +473,21 @@ class CausalInferenceForRL:
             else:
                 results = list(map(self._process_row, (row for _, row in chunk.iterrows())))
 
-        chunk[LABEL_reward_action_values] = results
+        chunk[LABEL_reward_action_values] = [
+            {str(k): v for k, v in d.items()} if isinstance(d, dict) else d
+            for d in results
+        ]
         return chunk
 
-    def _process_chunk(self, chunk: List, show_progress: bool, parallel: bool) -> pd.DataFrame:
+    def _process_chunk(self, chunk: List, show_progress: bool, parallel: bool, path_save:str, n:int=-1) -> pd.DataFrame:
         df_chunk = self._create_dataframe_chunk(chunk, show_progress)
         df_chunk = self._update_causal_table_chunk(df_chunk, show_progress, parallel)
+        if n != -1:
+            df_chunk.to_parquet(f'{path_save}/ct_{n}.parquet')
 
         return df_chunk
 
-    def create_causal_table(self, show_progress: bool = True, parallel: bool = True) -> pd.DataFrame:
+    def create_causal_table(self, show_progress: bool = True, parallel: bool = True, path_save_ct: str=None) -> pd.DataFrame:
         model = self.ci.return_cbn()
 
         variables = model.nodes()
@@ -502,28 +507,23 @@ class CausalInferenceForRL:
 
         del all_combinations
 
-        """        if parallel:
-            n_processes = self.n_processes
-
-            # Determine chunk size
+        if len(combinations_dicts) > 1000000:
+            n_processes = 10
             chunk_size = len(combinations_dicts) // n_processes
             if chunk_size == 0:
-                chunk_size = len(combinations_dicts)  # Handle case where n_processes > len(combinations_dicts)
+                chunk_size = len(combinations_dicts)
 
-            # Split combinations_dicts into chunks
             chunks = [combinations_dicts[i:i + chunk_size] for i in range(0, len(combinations_dicts), chunk_size)]
 
-            # Create and update chunks in parallel
-            with Pool(processes=n_processes) as pool:
-                updated_chunks = pool.starmap(self._process_chunk,
-                                              [(chunk, show_progress, parallel) for chunk in chunks])
-            # TODO: try better concat (sharding for database -> master database suggests where is something)
-            # Concatenate the updated chunks into the final causal table
-            causal_table = pd.concat(updated_chunks, ignore_index=True, copy=False)
+            list(map(lambda chunk: self._process_chunk(chunk[1], show_progress, parallel, path_save_ct, chunk[0]), enumerate(chunks)))
 
-        else:"""
-        # If not parallel, create the DataFrame normally and update it
-        causal_table = self._create_dataframe_chunk(combinations_dicts, show_progress)
-        causal_table = self._update_causal_table_chunk(causal_table, show_progress, parallel)
+            causal_table = concat_and_cleanup_parquet_files(path_save_ct, 'ct_*.parquet',
+                                                            f'{path_save_ct}/causal_table.parquet')
+        else:
+            # If not chunk, create the DataFrame normally and update it
+            causal_table = self._create_dataframe_chunk(combinations_dicts, show_progress)
+            causal_table = self._update_causal_table_chunk(causal_table, show_progress, parallel)
+
+            causal_table.to_parquet(f'{path_save_ct}/causal_table.parquet', index=False)
 
         return causal_table

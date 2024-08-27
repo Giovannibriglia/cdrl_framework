@@ -30,9 +30,7 @@ def main(task: str):
             offline_ci = CausalInferenceForRL(online=True, df_train=dataframe, causal_graph=causal_graph, bn_dict=bn_dict,
                                               causal_table=None, obs_train_to_test=obs_train_to_test,
                                               grouped_features=grouped_features)
-            causal_table = offline_ci.create_causal_table()
-
-            causal_table.to_pickle(f'{path_file}/causal_table.pkl')
+            causal_table = offline_ci.create_causal_table(path_save_ct=path_file)
         else:
             print('some files are empty')
     else:
@@ -40,5 +38,5 @@ def main(task: str):
 
 
 if __name__ == '__main__':
-    task_name = input('Select task: ')
+    task_name = str(input('Select task: ')).lower()
     main(task_name)

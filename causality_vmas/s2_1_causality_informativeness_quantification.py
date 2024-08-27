@@ -95,20 +95,19 @@ class CausalityInformativenessQuantification:
 
         df_test = self.df_target.loc[:min(self.n_test_samples, len(self.df_target)), :]
 
-        tasks = [row.to_dict() for n, row in df_test.iterrows()]
-
         with Pool(self.n_processes) as pool:
             if show_progress:
                 results = list(
-                    pool.map(self._process_row, tqdm(tasks, total=len(tasks),
+                    pool.map(self._process_row, tqdm((row for _, row in df_test.iterrows()), total=len(df_test),
                                                      desc=f'Inferring causal knowledge with {self.n_processes} processes in parallel...')))
             else:
-                results = list(pool.map(self._process_row, tasks))
-        """
-        if show_progress:
-            results = list(map(self._process_row, tqdm(tasks, total=len(tasks), desc='Inferring causal knowledge...')))
+                results = list(pool.map(self._process_row, (row for _, row in df_test.iterrows())))
+
+        """if show_progress:
+            results = list(map(self._process_row, tqdm((row for _, row in df_test.iterrows()), total=len(df_test),
+                                                        desc='Inferring causal knowledge...')))
         else:
-            results = list(map(self._process_row, tasks))"""
+            results = list(map(self._process_row, (row for _, row in df_test.iterrows())))"""
 
         for target_value, pred_value in results:
             self.dict_scores[LABEL_target_value].append(target_value)
@@ -116,8 +115,8 @@ class CausalityInformativenessQuantification:
 
         return
 
-    def _process_row(self, row: Dict) -> Tuple[float, float]:
-
+    def _process_row(self, row: pd.Series) -> Tuple[float, float]:
+        row = row.to_dict()
         value_target = row[self.target_feature]
 
         input_obs = {key: value for key, value in row.items() if self.target_feature not in key}
