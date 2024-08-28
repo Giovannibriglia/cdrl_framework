@@ -39,6 +39,7 @@ class SensitiveAnalysis:
         dict_scores, causal_graph, dict_bn_info = ciq.evaluate()
 
         if not (dict_scores is None or causal_graph is None or dict_bn_info is None):
+            logging.info(f'Results computed for {params_approximation} approximation')
             list_causal_graph = graph_to_list(causal_graph)
             save_json_incrementally(list_causal_graph, self.dir_save, "causal_graph_")
             save_json_incrementally(dict_bn_info, self.dir_save, "bn_params_")
@@ -54,7 +55,7 @@ class SensitiveAnalysis:
                                       LABEL_ciq_scores: dict_scores}
             save_json_incrementally(dict_scores_evaluation, self.dir_save, 'scores_')
 
-            logging.info(f'Results computed and saved for {params_approximation} approximation')
+            logging.info(f'Results saved for {params_approximation} approximation')
         else:
             logging.error(f'No items to save')
 

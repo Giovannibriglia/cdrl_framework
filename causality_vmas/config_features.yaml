@@ -52,3 +52,18 @@ balance:
         12: "VelLineX"
         13: "AngVel"
         14: "Rot"
+
+dropout:
+    features:
+        1:
+
+wheel:
+    features:
+        1: "PosX"
+        2: "PosY"
+        3: "VelX"
+        4: "VelY"
+        5: "L1x-posX"
+        6: "L1y-posY"
+        7: "L2x-posX"
+        8: "L2y-posY"

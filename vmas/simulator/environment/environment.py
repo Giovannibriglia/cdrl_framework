@@ -4,7 +4,7 @@
 import random
 from ctypes import byref
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
-from vmas.simulator.utils import Color, ScenarioUtils, X, Y
+from vmas.simulator.utils import Color
 import numpy as np
 import torch
 from gym import spaces
@@ -720,43 +720,33 @@ class Environment(TorchVectorizedObject):
             )
         " ************************************************************************************************************ "
         if self.world.x_semidim is not None and self.world.y_semidim is not None:
-            try:
-                radius = self.world.agent_radius
-            except:
-                radius = 0.1
-            # Render
-            top_left = (
-            self.scenario.render_origin[X] - self.world.x_semidim - radius, self.scenario.render_origin[Y] + self.world.y_semidim + radius)
-            top_right = (
-            self.scenario.render_origin[X] + self.world.x_semidim + radius, self.scenario.render_origin[Y] + self.world.y_semidim + radius)
-            bottom_right = (
-            self.scenario.render_origin[X] + self.world.x_semidim + radius, self.scenario.render_origin[Y] - self.world.y_semidim - radius)
-            bottom_left = (
-            self.scenario.render_origin[X] - self.world.x_semidim - radius, self.scenario.render_origin[Y] - self.world.y_semidim - radius)
+            # ger agent radius
+            radius = self.agents[0].shape.radius
 
+            # get the origin and dimensions
+            origin_x, origin_y = self.scenario.render_origin[X], self.scenario.render_origin[Y]
+            x_semi, y_semi = self.world.x_semidim + radius, self.world.y_semidim + radius
+
+            # define the corner points
+            corners = [
+                (origin_x - x_semi, origin_y + y_semi),  # top_left
+                (origin_x + x_semi, origin_y + y_semi),  # top_right
+                (origin_x + x_semi, origin_y - y_semi),  # bottom_right
+                (origin_x - x_semi, origin_y - y_semi)  # bottom_left
+            ]
+
+            # color and transform
             color = Color.BLACK.value
-
             xform = rendering.Transform()
 
-            line1 = Line(top_left, top_right, width=1)
-            line1.add_attr(xform)
-            line1.set_color(*color)
-            self.viewer.add_geom(line1)
-
-            line2 = Line(top_right, bottom_right, width=1)
-            line2.add_attr(xform)
-            line2.set_color(*color)
-            self.viewer.add_geom(line2)
-
-            line3 = Line(bottom_right, bottom_left, width=1)
-            line3.add_attr(xform)
-            line3.set_color(*color)
-            self.viewer.add_geom(line3)
-
-            line4 = Line(bottom_left, top_left, width=1)
-            line4.add_attr(xform)
-            line4.set_color(*color)
-            self.viewer.add_geom(line4)
+            # Create lines between the corners
+            for i in range(len(corners)):
+                start = corners[i]
+                end = corners[(i + 1) % len(corners)]  # Connects last point to the first
+                line = Line(start, end, width=1)
+                line.add_attr(xform)
+                line.set_color(*color)
+                self.viewer.add_geom(line)
         " ************************************************************************************************************ "
         self._set_agent_comm_messages(env_index)
 

@@ -81,7 +81,7 @@ class CausalityInformativenessQuantification:
         self.causal_graph = constraints_causal_graph(self.causal_graph)
         # plot_graph(self.causal_graph, title='', if_show=True)
 
-    def ci_assessment(self, show_progress: bool = False):
+    def ci_assessment(self, show_progress: bool = False, parallel: bool = True):
         logging.info(f'Setting up causal bayesian network...')
         try:
             self.ci = SingleCausalInference(self.df_approx, self.causal_graph)
@@ -95,19 +95,24 @@ class CausalityInformativenessQuantification:
 
         df_test = self.df_target.loc[:min(self.n_test_samples, len(self.df_target)), :]
 
-        with Pool(self.n_processes) as pool:
+        df_test = df_test.apply(lambda row: self._process_and_modify_row(row), axis=1)
+
+        if parallel:
             if show_progress:
-                results = list(
-                    pool.map(self._process_row, tqdm((row for _, row in df_test.iterrows()), total=len(df_test),
+                with Pool(self.n_processes) as pool:
+                    results = list(
+                    pool.map(self._process_row, tqdm((row for _, row in df_test.iterrows()),
+                                                     total=len(df_test),
                                                      desc=f'Inferring causal knowledge with {self.n_processes} processes in parallel...')))
             else:
-                results = list(pool.map(self._process_row, (row for _, row in df_test.iterrows())))
-
-        """if show_progress:
-            results = list(map(self._process_row, tqdm((row for _, row in df_test.iterrows()), total=len(df_test),
-                                                        desc='Inferring causal knowledge...')))
+                with Pool(self.n_processes) as pool:
+                    results = list(pool.map(self._process_row, (row for _, row in df_test.iterrows())))
         else:
-            results = list(map(self._process_row, (row for _, row in df_test.iterrows())))"""
+            if show_progress:
+                results = list(map(self._process_row, tqdm((row for _, row in df_test.iterrows()), total=len(df_test),
+                                                            desc='Inferring causal knowledge...')))
+            else:
+                results = list(map(self._process_row, (row for _, row in df_test.iterrows())))
 
         for target_value, pred_value in results:
             self.dict_scores[LABEL_target_value].append(target_value)
@@ -115,11 +120,11 @@ class CausalityInformativenessQuantification:
 
         return
 
-    def _process_row(self, row: pd.Series) -> Tuple[float, float]:
-        row = row.to_dict()
-        value_target = row[self.target_feature]
+    def _process_and_modify_row(self, row: pd.Series):
+        row_dict = row.to_dict()
 
-        input_obs = {key: value for key, value in row.items() if self.target_feature not in key}
+        # Create a dictionary excluding the target feature
+        input_obs = {key: value for key, value in row_dict.items() if key != self.target_feature}
 
         if self.obs_train_to_test is not None:
             kwargs = {}
@@ -128,6 +133,16 @@ class CausalityInformativenessQuantification:
             obs = self.obs_train_to_test(input_obs, **kwargs)
         else:
             obs = input_obs
+
+        # Modify the original row using the processed values in `obs`
+        for key, value in obs.items():
+            if key != self.target_feature:  # Ensure the target feature is not updated
+                row[key] = value
+
+        return row
+
+    def _process_row(self, obs: pd.Series) -> Tuple[float, float]:
+        value_target = obs[self.target_feature]
 
         evidence = obs.copy()
         try:

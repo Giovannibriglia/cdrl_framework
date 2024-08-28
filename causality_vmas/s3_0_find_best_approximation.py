@@ -3,7 +3,7 @@ import logging
 import os
 import shutil
 from typing import List, Dict, Any
-
+import random
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -131,7 +131,7 @@ class BestApprox:
         }
         self.dict_metrics[LABEL_causal_graph_similarity_metrics] = metrics
 
-    def _extract_json_results(self) -> Dict[str, Any]:
+    def _extract_json_results(self) -> dict[int, Any]:
         json_files = [f for f in os.listdir(self.path_results) if f.endswith('.json') and 'scores' in f]
         return {get_numeric_part(filename): json.load(open(os.path.join(self.path_results, filename), 'r')) for filename
                 in json_files}
@@ -156,7 +156,6 @@ class BestApprox:
         metrics = {}
         for metric_name, metric_computation in self.dict_metrics[LABEL_binary_metrics].items():
             metrics[metric_name] = metric_computation(true, pred)
-
         return metrics
 
     def _compute_causality_distance_metrics(self, G_pred: nx.DiGraph):
@@ -318,20 +317,21 @@ class BestApprox:
         X = df[params_features]
         y = df[scores_features].values.ravel()
 
-        model = RandomForestRegressor()
-        model.fit(X, y)
+        if not np.isnan(y).any():
+            model = RandomForestRegressor()
+            model.fit(X, y)
 
-        importances = sum(est.feature_importances_ for est in model.estimators_) / len(model.estimators_)
+            importances = sum(est.feature_importances_ for est in model.estimators_) / len(model.estimators_)
 
-        feature_importances = pd.DataFrame({
-            'Feature': X.columns,
-            'Importance': importances
-        }).sort_values(by='Importance', ascending=False)
+            feature_importances = pd.DataFrame({
+                'Feature': X.columns,
+                'Importance': importances
+            }).sort_values(by='Importance', ascending=False)
 
-        top_2_features = sorted(feature_importances.head(2)['Feature'].tolist())
-
-        return top_2_features
-
+            top_2_features = sorted(feature_importances.head(2)['Feature'].tolist())
+            return top_2_features
+        else:
+            return random.sample(params_features, 2)
 
 def main(task):
     path_results = f'./{LABEL_dir_storing_dict_and_info}_{task}'
@@ -346,4 +346,4 @@ def main(task):
 
 
 if __name__ == '__main__':
-    main('discovery')
+    main('balance')

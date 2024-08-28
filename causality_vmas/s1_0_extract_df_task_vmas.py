@@ -240,4 +240,5 @@ def main(scenario_name: str):
 
 
 if __name__ == "__main__":
-    main('flocking')
+    task_name = str(input('Select task: ')).lower()
+    main(task_name)

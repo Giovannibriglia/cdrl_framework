@@ -1,7 +1,7 @@
 import json
-
 import pandas as pd
 
+from causality_vmas.s1_0_extract_df_task_vmas import VMASExperiment
 from causality_vmas import LABEL_grouped_features
 from causality_vmas.s2_0_sensitive_analysis import SensitiveAnalysis
 from causality_vmas.s3_0_find_best_approximation import BestApprox

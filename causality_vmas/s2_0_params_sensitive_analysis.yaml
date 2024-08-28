@@ -22,3 +22,10 @@ balance:
       n_rows: [ 25000, 100000 ]
       n_bins: [ 10, 15, 20 ]
 
+dropout:
+      n_rows: [ 25000, 100000 ]
+      n_bins: [ 10, 15, 20 ]
+
+wheel:
+      n_rows: [ 25000, 100000 ]
+      n_bins: [ 10, 15, 20 ]

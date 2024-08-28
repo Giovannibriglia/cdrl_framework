@@ -297,21 +297,25 @@ def constraints_causal_graph(causal_graph: nx.DiGraph):
 " ******************************************************************************************************************** "
 
 
-def find_bin(value: int, intervals: List[float]) -> int:
-    if value == intervals[-1]:
-        return len(intervals) - 2
-    return next(i for i in range(len(intervals) - 1) if intervals[i] <= value < intervals[i + 1])
+def find_bin(value: int, intervals: list[float]) -> int:
+    if isinstance(value, (int, float)):
+        if np.isnan(value):  # Check if the value is NaN
+            return np.NaN
+        if value == intervals[-1]:
+            return len(intervals) - 2
+        return next(i for i in range(len(intervals) - 1) if intervals[i] <= value < intervals[i + 1])
+    else:
+        return np.NaN
 
 
 def values_to_bins(values: List, intervals: List) -> List[int]:
     # Assuming intervals is a list where the first element is a label and the second is the list of floats
     label, interval_values = intervals
-
     # Sort only the interval values
     sorted_intervals = sorted(interval_values)  # Ensure intervals are in ascending order
-
     # Now apply the find_bin function using the sorted intervals
-    return list(map(lambda value: find_bin(value, sorted_intervals), values))
+    results = list(map(lambda value: find_bin(value, sorted_intervals), values))
+    return results
 
 
 def discretize_value(value: int | float, intervals: List) -> int | float:
@@ -616,6 +620,36 @@ def _balance_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
     return approx_dict
 
 
+def _dropout_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
+    df, params = input_elements
+
+    n_bins = params.get('n_bins', 20)
+    n_rows = params.get('n_rows', int(len(df) / 2))
+
+    not_discretize_these = [s for s in df.columns.to_list() if
+                            len(df[s].unique()) <= n_bins or
+                            LABEL_kind_group_var in s or
+                            'action' in s]
+
+    df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize_these)
+
+    new_df = df.loc[:n_rows - 1, :]
+
+    map(lambda col: check_discretization(new_df, col, n_bins, not_discretize_these), new_df.columns.to_list())
+
+    approx_dict = {LABEL_approximation_parameters: {'n_bins': n_bins, 'n_rows': n_rows},
+                   LABEL_discrete_intervals: discrete_intervals,
+                   LABEL_dataframe_approximated: new_df,
+                   LABEL_grouped_features: (0, [])}
+    return approx_dict
+
+
+def _dropout_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
+    discrete_intervals = kwargs[LABEL_discrete_intervals]
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in input_obs.items()}
+    return final_obs
+
+
 def inverse_approximation_function(task: str):
     if task == 'navigation':
         return _navigation_inverse_approximation
@@ -627,6 +661,8 @@ def inverse_approximation_function(task: str):
         return _give_way_inverse_approximation
     elif task == 'balance':
         return _balance_inverse_approximation
+    elif task == 'dropout':
+        return _dropout_inverse_approximation
     # TODO: others
     else:
         raise NotImplementedError("The inverse approximation function for this task has not been implemented")
@@ -654,6 +690,8 @@ def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
             approximator = _give_way_approximation
         elif task_name == 'balance':
             approximator = _balance_approximation
+        elif task_name == 'dropout':
+            approximator = _dropout_approximation
         # TODO: others
         else:
             raise NotImplementedError("The approximation function for this task has not been implemented")

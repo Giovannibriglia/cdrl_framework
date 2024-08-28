@@ -29,4 +29,11 @@ scenario:
         continuous_actions: False
         seed: 42
 
+    dropout:
+        continuous_actions: False
+        seed: 42
+
+    wheel:
+        continuous_actions: False
+        seed: 42
 
