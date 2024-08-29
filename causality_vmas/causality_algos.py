@@ -6,8 +6,6 @@ from multiprocessing import Pool
 from typing import Dict, Tuple, List
 
 import causalnex
-import jax
-import jax.numpy as jnp
 import networkx as nx
 import numpy as np
 import pandas as pd
