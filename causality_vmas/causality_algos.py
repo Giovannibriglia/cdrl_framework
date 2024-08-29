@@ -6,6 +6,8 @@ from multiprocessing import Pool
 from typing import Dict, Tuple, List
 
 import causalnex
+import jax
+import jax.numpy as jnp
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -317,7 +319,6 @@ class SingleCausalInference:
         if adjustment_set is not None and check_for_nan_or_infinite(adjustment_set):
             raise ValueError("Adjustment set data contains NaN or infinite values.")
 
-
 class CausalInferenceForRL:
     def __init__(self, online: bool, df_train: pd.DataFrame, causal_graph: nx.DiGraph,
                  bn_dict: Dict = None, causal_table: pd.DataFrame = None,
@@ -418,47 +419,39 @@ class CausalInferenceForRL:
         except Exception as e:
             raise ValueError(e)
 
-        dict_to_return = {LABEL_reward_action_values: reward_action_values}
-
-        # combination[LABEL_reward_action_values] = reward_action_values
-        # print('Process combination: ', time.time()-initial_time)
-
-        return dict_to_return
+        return reward_action_values
 
     @staticmethod
     def _create_dataframe_chunk(combinations_chunk: List, show_progress: bool) -> pd.DataFrame:
         if show_progress:
-            combinations_list = list(tqdm(combinations_chunk, desc="Processing single combination..."))
-            return pd.DataFrame(combinations_list)
+            return pd.DataFrame(tqdm(combinations_chunk, desc="Processing single combination..."))
         else:
             return pd.DataFrame(combinations_chunk)
 
-    def _process_row(self, row: pd.Series) -> Dict:
-        return self._process_combination(row.to_dict())[LABEL_reward_action_values]
-
     def _update_causal_table_chunk(self, chunk: pd.DataFrame, show_progress: bool, parallel: bool) -> pd.DataFrame:
+        rows_as_tuples = chunk.to_dict(orient='records')
+
         if parallel:
-            if show_progress:
-                with Pool(self.n_processes) as pool:
-                    results = list(pool.map(self._process_row, tqdm((row for _, row in chunk.iterrows()),
-                                                                    total=len(chunk),
-                                                                    desc='Single chunk computation...')))
-            else:
-                with Pool(self.n_processes) as pool:
-                    results = list(pool.map(self._process_row, (row for _, row in chunk.iterrows())))
+            with Pool(self.n_processes) as pool:
+                if show_progress:
+                    results = list(pool.map(self._process_combination, tqdm(rows_as_tuples,
+                                                                            total=len(rows_as_tuples),
+                                                                           desc='Processing chunk in parallel...')))
+                else:
+                    results = list(pool.map(self._process_combination, rows_as_tuples))
         else:
             if show_progress:
-                results = list(map(self._process_row, tqdm((row for _, row in chunk.iterrows()),
-                                                           total=len(chunk),
-                                                           desc='Single chunk computation...')))
+                results = list(map(self._process_combination, tqdm(rows_as_tuples,
+                                                                   total=len(rows_as_tuples),
+                                                                   desc='Processing chunk...')))
             else:
-                results = list(map(self._process_row, (row for _, row in chunk.iterrows())))
+                results = list(map(self._process_combination, rows_as_tuples))
 
         chunk[LABEL_reward_action_values] = [
-            {str(k): v for k, v in d.items()} if isinstance(d, dict) else d
-            for d in results
+            {str(k): v for k, v in d.items()} if isinstance(d, dict) else d for d in results
         ]
         return chunk
+
 
     def _process_chunk(self, chunk: List, show_progress: bool, parallel: bool, path_save:str, n:int=-1) -> pd.DataFrame:
         df_chunk = self._create_dataframe_chunk(chunk, show_progress)
@@ -488,7 +481,7 @@ class CausalInferenceForRL:
 
         del all_combinations
 
-        if len(combinations_dicts) > 1000000:
+        """if len(combinations_dicts) > 1000000:
             n_processes = 10
             chunk_size = len(combinations_dicts) // n_processes
             if chunk_size == 0:
@@ -500,11 +493,12 @@ class CausalInferenceForRL:
 
             causal_table = concat_and_cleanup_parquet_files(path_save_ct, 'ct_*.parquet',
                                                             f'{path_save_ct}/causal_table.parquet')
-        else:
-            # If not chunk, create the DataFrame normally and update it
-            causal_table = self._create_dataframe_chunk(combinations_dicts, show_progress)
-            causal_table = self._update_causal_table_chunk(causal_table, show_progress, parallel)
+        else:"""
+        # If not chunk, create the DataFrame normally and update it
+        causal_table = self._create_dataframe_chunk(combinations_dicts, show_progress)
+        causal_table = self._update_causal_table_chunk(causal_table, show_progress, parallel)
 
-            causal_table.to_parquet(f'{path_save_ct}/causal_table.parquet', index=False)
+        causal_table.to_parquet(f'{path_save_ct}/causal_table.parquet', index=False)
 
         return causal_table
+

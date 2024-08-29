@@ -4,6 +4,8 @@ import glob
 import os
 import pickle
 import platform
+import jax
+import jax.numpy as jnp
 import random
 import re
 import sys
