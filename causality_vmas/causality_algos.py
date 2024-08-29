@@ -18,8 +18,8 @@ from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm import tqdm
 
 from causality_vmas import LABEL_reward_action_values, LABEL_discrete_intervals, LABEL_grouped_features
-from causality_vmas.utils import dict_to_bn, extract_intervals_from_bn, get_process_and_threads, \
-    concat_and_cleanup_parquet_files
+from causality_vmas.utils import dict_to_bn, get_process_and_threads, \
+    concat_and_cleanup_parquet_files, check_values_in_states
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pgmpy.factors.discrete")
 
@@ -236,6 +236,15 @@ class SingleCausalInference:
     def return_cbn(self) -> BayesianNetwork:
         return self.cbn
 
+    def return_discrete_intervals_bn(self):
+        intervals_dict = {}
+        for node in self.cbn.nodes():
+            cpd = self.cbn.get_cpds(node)
+            if cpd:
+                # Assuming discrete nodes with states
+                intervals_dict[node] = cpd.state_names[node]
+        return intervals_dict
+
     def infer(self, input_dict_do: Dict, target_variable: str, evidence=None, adjustment_set=None) -> Dict:
         # print(f'infer: {input_dict_do} - {target_variable}')
 
@@ -255,6 +264,7 @@ class SingleCausalInference:
         else:
             # print(f'Provided adjustment set: {adjustment_set}')
             pass
+
         # Ensure target variable is not part of the adjustment set
         adjustment_set.discard(target_variable)
         query_result = self.ci.query(
@@ -324,8 +334,8 @@ class CausalInferenceForRL:
         del df_train, causal_graph, bn_dict
 
         self.ci = SingleCausalInference(self.df_train, self.causal_graph, self.bn_dict)
-        cbn = self.ci.return_cbn()
-        self.discrete_intervals_bn = extract_intervals_from_bn(cbn)
+
+        self.discrete_intervals_bn = self.ci.return_discrete_intervals_bn()
 
         self.grouped_features = grouped_features
 
@@ -343,7 +353,7 @@ class CausalInferenceForRL:
             # Create a new evidence dictionary by merging obs with the current reward_value
             evidence = {**obs, f'{self.reward_variable}': reward_value}
             # Check the values in the states
-            self._check_values_in_states(self.ci.cbn.states, obs, evidence)
+            check_values_in_states(self.ci.cbn.states, obs, evidence)
             # Infer the action distribution based on the evidence
             return self.ci.infer(obs, self.action_variable, evidence)
 
@@ -354,35 +364,6 @@ class CausalInferenceForRL:
         }
 
         return reward_actions_values
-
-    @staticmethod
-    def _check_values_in_states(known_states, observation, evidence):
-        not_in_observation = {}
-        not_in_evidence = {}
-
-        for state, values in known_states.items():
-            obs_value = observation.get(state, None)
-            evid_value = evidence.get(state, None)
-
-            if obs_value is not None and obs_value not in values:
-                print('*** ERROR ****')
-                print(state)
-                print(values)
-                print(obs_value)
-                not_in_observation[state] = obs_value
-
-            if evid_value is not None and evid_value not in values:
-                print('*** ERROR ****')
-                print(state)
-                print(values)
-                print(evid_value)
-                not_in_evidence[state] = evid_value
-
-        if not_in_observation != {}:
-            print("Values not in observation: ", not_in_observation)
-
-        if not_in_evidence != {}:
-            print("\nValues not in evidence: ", not_in_evidence)
 
     def _compute_reward_action_values(self, input_obs: Dict) -> Dict:
         if self.obs_train_to_test is not None:

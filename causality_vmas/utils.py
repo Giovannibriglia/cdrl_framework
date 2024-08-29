@@ -374,7 +374,7 @@ def discretize_dataframe(df: pd.DataFrame, n_bins: int = 50, scale='linear', not
     return discrete_df, variable_discrete_intervals
 
 
-def group_row_variables(input_obs: Union[Dict, List], variable_columns: list, N: int = 1) -> Dict:
+def group_row_variables(input_obs: Union[Dict, List], variables_to_group: list, N: int = 1) -> Dict:
     def get_row_dict(obs, variable_columns):
         return {i: obs[i] for i in variable_columns} if isinstance(obs, list) else {col: obs[col] for col in
                                                                                     variable_columns}
@@ -401,7 +401,7 @@ def group_row_variables(input_obs: Union[Dict, List], variable_columns: list, N:
             return [None if i in variable_columns else v for i, v in enumerate(obs)]
 
     obs = input_obs.copy()
-    row_dict = get_row_dict(obs, variable_columns)
+    row_dict = get_row_dict(obs, variables_to_group)
     sorted_variables = sorted(row_dict.items(), key=lambda x: x[1], reverse=True)[:N]
 
     obs_grouped = {k: v for d in [process_variable(i, k, v) for i, (k, v) in enumerate(sorted_variables)] for k, v in
@@ -412,7 +412,7 @@ def group_row_variables(input_obs: Union[Dict, List], variable_columns: list, N:
         obs_grouped[f'{LABEL_kind_group_var}_{i}'] = None
         obs_grouped[f'{LABEL_value_group_var}_{i}'] = None
 
-    obs = remove_variable_columns(obs, variable_columns)
+    obs = remove_variable_columns(obs, variables_to_group)
 
     # Combine the remaining original observation and grouped parts
     combined_obs = {**obs, **obs_grouped}
@@ -482,7 +482,6 @@ def _navigation_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     obs_grouped = group_row_variables(input_obs, features_group, n_groups)
     discrete_intervals = kwargs[LABEL_discrete_intervals]
     final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items()}
-
     return final_obs
 
 
@@ -663,12 +662,14 @@ def inverse_approximation_function(task: str):
         return _balance_inverse_approximation
     elif task == 'dropout':
         return _dropout_inverse_approximation
-    # TODO: others
+    elif task == 'wheel':
+        return _dropout_inverse_approximation
     else:
         raise NotImplementedError("The inverse approximation function for this task has not been implemented")
 
 
-def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
+def my_approximation(df_original: pd.DataFrame, task_name: str) -> List[Dict]:
+    df = df_original.copy()
     with open(f'./s2_0_params_sensitive_analysis.yaml', 'r') as file:
         config_approximation = yaml.safe_load(file)
 
@@ -691,6 +692,8 @@ def my_approximation(df: pd.DataFrame, task_name: str) -> List[Dict]:
         elif task_name == 'balance':
             approximator = _balance_approximation
         elif task_name == 'dropout':
+            approximator = _dropout_approximation
+        elif task_name == 'wheel':
             approximator = _dropout_approximation
         # TODO: others
         else:
@@ -815,17 +818,6 @@ def dict_to_bn(model_data) -> BayesianNetwork:
 
     model.check_model()
     return model
-
-
-def extract_intervals_from_bn(model: BayesianNetwork):
-    intervals_dict = {}
-    for node in model.nodes():
-        cpd = model.get_cpds(node)
-        if cpd:
-            # Assuming discrete nodes with states
-            intervals_dict[node] = cpd.state_names[node]
-    return intervals_dict
-
 
 " ******************************************************************************************************************** "
 
@@ -1328,3 +1320,33 @@ def concat_and_cleanup_parquet_files(directory: str, pattern: str, output_file: 
     print(f"Saved concatenated DataFrame to {output_file}")
 
     return final_df
+
+" ******************************************************************************************************************* "
+
+def check_values_in_states(known_states, observation, evidence):
+    not_in_observation = {}
+    not_in_evidence = {}
+
+    for state, values in known_states.items():
+        obs_value = observation.get(state, None)
+        evid_value = evidence.get(state, None)
+
+        if obs_value is not None and obs_value not in values:
+            print('*** ERROR ****')
+            print(state)
+            print(values)
+            print(obs_value)
+            not_in_observation[state] = obs_value
+
+        if evid_value is not None and evid_value not in values:
+            print('*** ERROR ****')
+            print(state)
+            print(values)
+            print(evid_value)
+            not_in_evidence[state] = evid_value
+
+    if not_in_observation != {}:
+        print("Values not in observation: ", not_in_observation)
+
+    if not_in_evidence != {}:
+        print("\nValues not in evidence: ", not_in_evidence)
