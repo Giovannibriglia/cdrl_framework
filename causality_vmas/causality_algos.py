@@ -4,7 +4,6 @@ import re
 import warnings
 from multiprocessing import Pool
 from typing import Dict, Tuple, List
-
 import causalnex
 import networkx as nx
 import numpy as np
@@ -18,8 +17,8 @@ from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm import tqdm
 
 from causality_vmas import LABEL_reward_action_values, LABEL_discrete_intervals, LABEL_grouped_features
-from causality_vmas.utils import dict_to_bn, get_process_and_threads, \
-    concat_and_cleanup_parquet_files, check_values_in_states
+from causality_vmas.utils import dict_to_bn, get_process_and_threads, check_values_in_states, \
+    concat_and_cleanup_parquet_files, get_df_size
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pgmpy.factors.discrete")
 
@@ -211,7 +210,6 @@ class CausalDiscovery:
         G.add_edges_from(causal_relationships)
 
         return G
-
 
 class SingleCausalInference:
     def __init__(self, df: pd.DataFrame, causal_graph: nx.DiGraph, dict_init_cbn: Dict = None):
@@ -410,6 +408,7 @@ class CausalInferenceForRL:
 
         return reward_action_values
 
+
     def _process_combination(self, combination: Dict) -> Dict:
         # initial_time = time.time()
         try:
@@ -450,16 +449,18 @@ class CausalInferenceForRL:
         ]
         return chunk
 
-
-    def _process_chunk(self, chunk: List, show_progress: bool, parallel: bool, path_save:str, n:int=-1) -> pd.DataFrame:
+    def _process_chunk(self, chunk: List, show_progress: bool, parallel: bool, path_save:str, n:int=-1):
         df_chunk = self._create_dataframe_chunk(chunk, show_progress)
         df_chunk = self._update_causal_table_chunk(df_chunk, show_progress, parallel)
         if n != -1:
             df_chunk.to_parquet(f'{path_save}/ct_{n}.parquet')
+        else:
+            df_chunk.to_parquet(f'{path_save}/causal_table.parquet')
+        get_df_size(df_chunk)
+        del chunk
+        del df_chunk
 
-        return df_chunk
-
-    def create_causal_table(self, show_progress: bool = True, parallel: bool = True, path_save_ct: str=None) -> pd.DataFrame:
+    def create_causal_table(self, show_progress: bool = True, parallel: bool = True, path_save_ct: str='.'):
         model = self.ci.return_cbn()
 
         variables = model.nodes()
@@ -479,24 +480,13 @@ class CausalInferenceForRL:
 
         del all_combinations
 
-        """if len(combinations_dicts) > 1000000:
-            n_processes = 10
-            chunk_size = len(combinations_dicts) // n_processes
-            if chunk_size == 0:
-                chunk_size = len(combinations_dicts)
+        if len(combinations_dicts) > 500000:
+            chunk_size = 500000
 
             chunks = [combinations_dicts[i:i + chunk_size] for i in range(0, len(combinations_dicts), chunk_size)]
+            del combinations_dicts
 
-            list(map(lambda chunk: self._process_chunk(chunk[1], show_progress, parallel, path_save_ct, chunk[0]), enumerate(chunks)))
-
-            causal_table = concat_and_cleanup_parquet_files(path_save_ct, 'ct_*.parquet',
-                                                            f'{path_save_ct}/causal_table.parquet')
-        else:"""
-        # If not chunk, create the DataFrame normally and update it
-        causal_table = self._create_dataframe_chunk(combinations_dicts, show_progress)
-        causal_table = self._update_causal_table_chunk(causal_table, show_progress, parallel)
-
-        causal_table.to_parquet(f'{path_save_ct}/causal_table.parquet', index=False)
-
-        return causal_table
-
+            for n, chunk in enumerate(chunks):
+                self._process_chunk(chunk, show_progress, parallel, path_save_ct, n)
+        else:
+            self._process_chunk(combinations_dicts, show_progress, parallel, path_save_ct)
