@@ -69,6 +69,25 @@ def graph_to_list(digraph: nx.DiGraph) -> list:
     return list(digraph.edges())
 
 
+def get_parents_and_children_sequence(graph: nx.DiGraph):
+    # Dictionary to store parents and children for each node
+    parent_child_sequence = {}
+
+    for node in graph.nodes:
+        # Get parents of the current node
+        parents = list(graph.predecessors(node))
+
+        # Get children of the current node
+        children = list(graph.successors(node))
+
+        # Store the parents and children in the dictionary
+        parent_child_sequence[node] = {
+            "parents": parents,
+            "children": children
+        }
+
+    return parent_child_sequence
+
 " ******************************************************************************************************************** "
 
 
@@ -251,53 +270,62 @@ def _get_numeric_suffix(var, label):
 
 
 def constraints_causal_graph(causal_graph: nx.DiGraph):
-    # TODO: procedura generale?
     # no value_sensor -> value_sensor or kind_sensor -> kind_sensor
     # no value_sensor1 -> kind_sensor0 or kind_sensor1 -> value_sensor0
-    # no vel -> distGoal or distGoal -> vel
-    # no distGoal -> value_sensor or value_sensor -> distGoal
-    # no distGoal -> kind_sensor or kind_sensor -> distGoal
+    # actions have no parents
 
-    # plot_graph(causal_graph, 'before constraints', True)
-
+    # Remove edges where both nodes are value_sensor or both are kind_sensor
     edges_to_remove_sensor = [(u, v) for u, v in causal_graph.edges() if
                               (LABEL_value_group_var in u and LABEL_value_group_var in v) or
                               (LABEL_kind_group_var in u and LABEL_kind_group_var in v)]
     causal_graph.remove_edges_from(edges_to_remove_sensor)
-    # print("Removed sensor edges:", [s for s in edges_to_remove_sensor if s not in causal_graph.edges()])
 
+    # Remove edges where one node is value_sensor and the other is kind_sensor
     edges_to_remove_sensor = [(u, v) for u, v in causal_graph.edges() if
                               ((_get_numeric_suffix(u, LABEL_value_group_var) is not None and
                                 _get_numeric_suffix(v, LABEL_kind_group_var) is not None) or
                                (_get_numeric_suffix(v, LABEL_value_group_var) is not None and
-                                _get_numeric_suffix(u, LABEL_kind_group_var) is not None))
-                              ]
+                                _get_numeric_suffix(u, LABEL_kind_group_var) is not None))]
     causal_graph.remove_edges_from(edges_to_remove_sensor)
-    # print("Removed sensor edges:", [s for s in edges_to_remove_sensor if s not in causal_graph.edges()])
 
-    edges_to_remove_sensor = [(u, v) for u, v in causal_graph.edges() if
-                              ('Vel' in u and 'Dist' in v) or
-                              ('Dist' in u and 'Vel' in v)]
-    causal_graph.remove_edges_from(edges_to_remove_sensor)
-    # print("Removed sensor edges:", [s for s in edges_to_remove_sensor if s not in causal_graph.edges()])
+    # Remove edges where the target node has "action" in its label (no parents for action nodes)
+    edges_to_remove_action = [(u, v) for u, v in causal_graph.edges() if 'action' in v]
+    causal_graph.remove_edges_from(edges_to_remove_action)
 
-    edges_to_remove_sensor = [(u, v) for u, v in causal_graph.edges() if
-                              (LABEL_value_group_var in u and 'Dist' in v) or
-                              ('Dist' in u and LABEL_value_group_var in v) or
-                              (LABEL_kind_group_var in u and 'Dist' in v) or
-                              ('Dist' in u and LABEL_kind_group_var in v)]
-    causal_graph.remove_edges_from(edges_to_remove_sensor)
-    # print("Removed sensor edges:", [s for s in edges_to_remove_sensor if s not in causal_graph.edges()])
+    # Remove outgoing edges from nodes labeled "reward" (no children for reward nodes)
+    edges_to_remove_reward = [(u, v) for u, v in causal_graph.edges() if 'reward' in u]
+    causal_graph.remove_edges_from(edges_to_remove_reward)
 
-    # plot_graph(causal_graph, 'after constraints', True)
+    # Add edges between action and reward if they don't already exist
+    action_nodes = [n for n in causal_graph.nodes() if 'action' in n]
+    reward_nodes = [n for n in causal_graph.nodes() if 'reward' in n]
+
+    for action_node in action_nodes:
+        for reward_node in reward_nodes:
+            if not causal_graph.has_edge(action_node, reward_node):
+                causal_graph.add_edge(action_node, reward_node)
+
     # print(causal_graph)
     return causal_graph
 
 
+def markov_blanket(graph: nx.DiGraph, target: str) -> nx.DiGraph:
+    # Parents of the target (nodes with edges to the target)
+    parents = set(graph.predecessors(target))
+
+    # Children of the target (nodes that the target points to)
+    children = set(graph.successors(target))
+
+    # Markov blanket is the union of parents, children, and the target itself
+    markov_blanket_nodes = parents.union(children).union({target})
+
+    # Return the Markov blanket subgraph
+    return graph.subgraph(markov_blanket_nodes)
+
 " ******************************************************************************************************************** "
 
 
-def find_bin(value: int, intervals: list[float]) -> int:
+def find_bin(value: int, intervals: list[float]) -> float | int:
     if isinstance(value, (int, float)):
         if np.isnan(value):  # Check if the value is NaN
             return np.NaN
@@ -402,7 +430,11 @@ def group_row_variables(input_obs: Union[Dict, List], variables_to_group: list, 
 
     obs = input_obs.copy()
     row_dict = get_row_dict(obs, variables_to_group)
-    sorted_variables = sorted(row_dict.items(), key=lambda x: x[1], reverse=True)[:N]
+
+    # Handling None values during sorting
+    sorted_variables = sorted(row_dict.items(),
+                              key=lambda x: (x[1] is None, x[1] if x[1] is not None else float('-inf')), reverse=True)[
+                       :N]
 
     obs_grouped = {k: v for d in [process_variable(i, k, v) for i, (k, v) in enumerate(sorted_variables)] for k, v in
                    d.items()}
@@ -463,9 +495,7 @@ def _navigation_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict
                             len(df[s].unique()) <= n_bins or
                             LABEL_kind_group_var in s or
                             'action' in s]
-
     df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize_these)
-
     new_df = df.loc[:n_rows - 1, :]
 
     map(lambda col: check_discretization(new_df, col, n_bins, not_discretize_these), new_df.columns.to_list())
@@ -481,7 +511,7 @@ def _navigation_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     n_groups, features_group = kwargs[LABEL_grouped_features]  # 2, [obs4-ob5-...]
     obs_grouped = group_row_variables(input_obs, features_group, n_groups)
     discrete_intervals = kwargs[LABEL_discrete_intervals]
-    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items()}
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items() if key in discrete_intervals.keys()}
     return final_obs
 
 
@@ -491,8 +521,9 @@ def _discovery_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
     n_bins = params.get('n_bins', 20)
     n_rays = params.get('n_rays', 1)
     n_rows = params.get('n_rows', int(len(df) / 2))
-    print('**** VERIFICA FEATURES, 2 VOLTE POS?? *****')
-    variables_to_group = df.columns.to_list()[4:-2]
+
+    variables_to_group = df.columns.to_list()[6:-2]
+
     df = group_df_variables(df, variables_to_group, n_rays)
 
     not_discretize_these = [s for s in df.columns.to_list() if
@@ -518,7 +549,7 @@ def _discovery_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     obs_grouped = group_row_variables(input_obs, features_group, n_groups)
 
     discrete_intervals = kwargs[LABEL_discrete_intervals]
-    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items()}
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items() if key in discrete_intervals.keys()}
 
     return final_obs
 
@@ -555,7 +586,7 @@ def _flocking_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     n_groups, features_group = kwargs[LABEL_grouped_features]  # 2, [obs4-ob5-...]
     obs_grouped = group_row_variables(input_obs, features_group, n_groups)
     discrete_intervals = kwargs[LABEL_discrete_intervals]
-    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items()}
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in obs_grouped.items() if key in discrete_intervals.keys()}
     return final_obs
 
 
@@ -585,13 +616,13 @@ def _give_way_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
 
 def _give_way_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     discrete_intervals = kwargs[LABEL_discrete_intervals]
-    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in input_obs.items()}
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in input_obs.items() if key in discrete_intervals}
     return final_obs
 
 
 def _balance_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     discrete_intervals = kwargs[LABEL_discrete_intervals]
-    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in input_obs.items()}
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in input_obs.items() if key in discrete_intervals}
     return final_obs
 
 
@@ -645,7 +676,7 @@ def _dropout_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
 
 def _dropout_inverse_approximation(input_obs: Dict, **kwargs) -> Dict:
     discrete_intervals = kwargs[LABEL_discrete_intervals]
-    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in input_obs.items()}
+    final_obs = {key: discretize_value(value, discrete_intervals[key]) for key, value in input_obs.items() if key in discrete_intervals}
     return final_obs
 
 
@@ -679,7 +710,7 @@ def my_approximation(df_original: pd.DataFrame, task_name: str) -> List[Dict]:
         all_combs = list(itertools.product(*params.values()))
         formatted_combinations = [dict(zip(params.keys(), comb)) for comb in all_combs]
 
-        all_params_list = [(df, single_task_combo_params) for single_task_combo_params in formatted_combinations]
+        all_params_list = [(df.copy(), single_task_combo_params) for single_task_combo_params in formatted_combinations]
 
         if task_name == 'navigation':
             approximator = _navigation_approximation
@@ -993,17 +1024,28 @@ def get_StructuralHammingDistance(target, pred, double_for_anticausal=True) -> f
     true_labels = get_adjacency_matrix(target)
     predictions = get_adjacency_matrix(pred)
 
+    # Calculate the padding sizes and ensure they are non-negative
+    pad_size = (
+    max(0, true_labels.shape[0] - predictions.shape[0]), max(0, true_labels.shape[1] - predictions.shape[1]))
+
     # Padding predictions to match the shape of true_labels
-    pad_size = (true_labels.shape[0] - predictions.shape[0], true_labels.shape[1] - predictions.shape[1])
     padded_predictions = np.pad(predictions, ((0, pad_size[0]), (0, pad_size[1])), mode='constant', constant_values=0)
 
-    diff = np.abs(true_labels - padded_predictions)
+    # Check if padding is also needed for true_labels
+    pad_size_true = (
+    max(0, predictions.shape[0] - true_labels.shape[0]), max(0, predictions.shape[1] - true_labels.shape[1]))
+    padded_true_labels = np.pad(true_labels, ((0, pad_size_true[0]), (0, pad_size_true[1])), mode='constant',
+                                constant_values=0)
+
+    # Now calculate the difference
+    diff = np.abs(padded_true_labels - padded_predictions)
+
     if double_for_anticausal:
-        return np.sum(diff)
+        return abs(np.sum(diff))
     else:
         diff = diff + diff.transpose()
         diff[diff > 1] = 1  # Ignoring the double edges.
-        return np.sum(diff) / 2
+        return abs(np.sum(diff) / 2)
 
 
 def get_StructuralInterventionDistance(target, pred) -> int:
@@ -1072,7 +1114,7 @@ def get_FrobeniusNorm(target_graph, pred_graph) -> float:
         target = _resize_matrix(target, new_shape)
         pred = _resize_matrix(pred, new_shape)
 
-    return np.linalg.norm(target - pred, 'fro')
+    return abs(np.linalg.norm(target - pred, 'fro'))
 
 
 def get_JaccardSimilarity(target, pred) -> float:

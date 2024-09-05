@@ -8,13 +8,16 @@ simulation:
 scenario:
     navigation:
         shared_rew : False
-        x_semidim: 0.5
-        y_semidim: 0.5
+        world_spawning_x: 0.5
+        world_spawning_y: 0.5
+        enforce_bounds: True
         continuous_actions: False
         seed: 42
 
     discovery:
         continuous_actions: False
+        x_semidim: 0.5
+        y_semidim: 0.5
         seed: 42
 
     flocking:

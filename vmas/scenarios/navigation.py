@@ -4,7 +4,6 @@
 import typing
 from typing import Callable, Dict, List
 
-import numpy as np
 import torch
 from torch import Tensor
 
@@ -21,37 +20,45 @@ if typing.TYPE_CHECKING:
 
 class Scenario(BaseScenario):
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-        self.plot_grid = True
-        self.n_agents = kwargs.get("n_agents", 4)
-        self.collisions = kwargs.get("collisions", True)
-        "*************************************************************************************************************"
-        self.x_semidim = kwargs.get("x_semidim", None)
-        self.y_semidim = kwargs.get("y_semidim", None)
-        self.n_rays = kwargs.get("n_rays", 12)
+        self.plot_grid = False
+        self.n_agents = kwargs.pop("n_agents", 4)
+        self.collisions = kwargs.pop("collisions", True)
 
-        "*************************************************************************************************************"
-        self.agents_with_same_goal = kwargs.get("agents_with_same_goal", 1)
-        self.split_goals = kwargs.get("split_goals", False)
-        self.observe_all_goals = kwargs.get("observe_all_goals", False)
+        self.world_spawning_x = kwargs.pop(
+            "world_spawning_x", 1
+        )  # X-coordinate limit for entities spawning
+        self.world_spawning_y = kwargs.pop(
+            "world_spawning_y", 1
+        )  # Y-coordinate limit for entities spawning
+        self.enforce_bounds = kwargs.pop(
+            "enforce_bounds", False
+        )  # If False, the world is unlimited; else, constrained by world_spawning_x and world_spawning_y.
 
-        self.lidar_range = kwargs.get("lidar_range", 0.35)
-        self.agent_radius = kwargs.get("agent_radius", 0.1)
-        self.comms_range = kwargs.get("comms_range", 0)
+        self.agents_with_same_goal = kwargs.pop("agents_with_same_goal", 1)
+        self.split_goals = kwargs.pop("split_goals", False)
+        self.observe_all_goals = kwargs.pop("observe_all_goals", False)
 
-        self.shared_rew = kwargs.get("shared_rew", True)
-        self.pos_shaping_factor = kwargs.get("pos_shaping_factor", 1)
-        self.final_reward = kwargs.get("final_reward", 0.01)
+        self.lidar_range = kwargs.pop("lidar_range", 0.35)
+        self.agent_radius = kwargs.pop("agent_radius", 0.1)
+        self.comms_range = kwargs.pop("comms_range", 0)
+        self.n_rays = kwargs.pop("n_rays", 12)
 
-        self.agent_collision_penalty = kwargs.get("agent_collision_penalty", -1)
+        self.shared_rew = kwargs.pop("shared_rew", True)
+        self.pos_shaping_factor = kwargs.pop("pos_shaping_factor", 1)
+        self.final_reward = kwargs.pop("final_reward", 0.01)
+
+        self.agent_collision_penalty = kwargs.pop("agent_collision_penalty", -1)
+        ScenarioUtils.check_kwargs_consumed(kwargs)
 
         self.min_distance_between_entities = self.agent_radius * 2 + 0.05
-        "*************************************************************************************************************"
-        if self.x_semidim is None and self.y_semidim is None:
-            self.world_semidim = 1.0
-        else:
-            self.world_semidim = min(self.x_semidim, self.y_semidim)
-        "*************************************************************************************************************"
         self.min_collision_distance = 0.005
+
+        if self.enforce_bounds:
+            self.x_semidim = self.world_spawning_x
+            self.y_semidim = self.world_spawning_y
+        else:
+            self.x_semidim = None
+            self.y_semidim = None
 
         assert 1 <= self.agents_with_same_goal <= self.n_agents
         if self.agents_with_same_goal > 1:
@@ -63,14 +70,18 @@ class Scenario(BaseScenario):
         # agents_with_same_goal = 1: all independent goals
         if self.split_goals:
             assert (
-                    self.n_agents % 2 == 0
-                    and self.agents_with_same_goal == self.n_agents // 2
+                self.n_agents % 2 == 0
+                and self.agents_with_same_goal == self.n_agents // 2
             ), "Splitting the goals is allowed when the agents are even and half the team has the same goal"
 
-        "*************************************************************************************************************"
         # Make world
-        world = World(batch_dim, device, substeps=2, x_semidim=self.x_semidim, y_semidim=self.y_semidim)
-        "*************************************************************************************************************"
+        world = World(
+            batch_dim,
+            device,
+            substeps=2,
+            x_semidim=self.x_semidim,
+            y_semidim=self.y_semidim,
+        )
 
         known_colors = [
             (0.22, 0.49, 0.72),
@@ -138,8 +149,8 @@ class Scenario(BaseScenario):
             self.world,
             env_index,
             self.min_distance_between_entities,
-            (-self.world_semidim, self.world_semidim),
-            (-self.world_semidim, self.world_semidim),
+            (-self.world_spawning_x, self.world_spawning_x),
+            (-self.world_spawning_y, self.world_spawning_y),
         )
 
         occupied_positions = torch.stack(
@@ -155,8 +166,8 @@ class Scenario(BaseScenario):
                 env_index=env_index,
                 world=self.world,
                 min_dist_between_entities=self.min_distance_between_entities,
-                x_bounds=(-self.world_semidim, self.world_semidim),
-                y_bounds=(-self.world_semidim, self.world_semidim),
+                x_bounds=(-self.world_spawning_x, self.world_spawning_x),
+                y_bounds=(-self.world_spawning_y, self.world_spawning_y),
             )
             goal_poses.append(position.squeeze(1))
             occupied_positions = torch.cat([occupied_positions, position], dim=1)
@@ -171,18 +182,18 @@ class Scenario(BaseScenario):
 
             if env_index is None:
                 agent.pos_shaping = (
-                        torch.linalg.vector_norm(
-                            agent.state.pos - agent.goal.state.pos,
-                            dim=1,
-                        )
-                        * self.pos_shaping_factor
+                    torch.linalg.vector_norm(
+                        agent.state.pos - agent.goal.state.pos,
+                        dim=1,
+                    )
+                    * self.pos_shaping_factor
                 )
             else:
                 agent.pos_shaping[env_index] = (
-                        torch.linalg.vector_norm(
-                            agent.state.pos[env_index] - agent.goal.state.pos[env_index]
-                        )
-                        * self.pos_shaping_factor
+                    torch.linalg.vector_norm(
+                        agent.state.pos[env_index] - agent.goal.state.pos[env_index]
+                    )
+                    * self.pos_shaping_factor
                 )
 
     def reward(self, agent: Agent):
@@ -211,10 +222,10 @@ class Scenario(BaseScenario):
                         distance = self.world.get_distance(a, b)
                         a.agent_collision_rew[
                             distance <= self.min_collision_distance
-                            ] += self.agent_collision_penalty
+                        ] += self.agent_collision_penalty
                         b.agent_collision_rew[
                             distance <= self.min_collision_distance
-                            ] += self.agent_collision_penalty
+                        ] += self.agent_collision_penalty
 
         pos_reward = self.pos_rew if self.shared_rew else agent.pos_rew
         return pos_reward + self.final_rew + agent.agent_collision_rew
@@ -309,7 +320,7 @@ class HeuristicPolicy(BaseHeuristicPolicy):
     def compute_action(self, observation: Tensor, u_range: Tensor) -> Tensor:
         """
         QP inputs:
-        These values need to computed apriori based on observation before passing into QP
+        These values need to computed apriri based on observation before passing into QP
 
         V: Lyapunov function value
         lfV: Lie derivative of Lyapunov function
@@ -335,19 +346,19 @@ class HeuristicPolicy(BaseHeuristicPolicy):
 
         # Laypunov function
         V_value = (
-                (agent_pos[:, X] - goal_pos[:, X]) ** 2
-                + 0.5 * (agent_pos[:, X] - goal_pos[:, X]) * agent_vel[:, X]
-                + agent_vel[:, X] ** 2
-                + (agent_pos[:, Y] - goal_pos[:, Y]) ** 2
-                + 0.5 * (agent_pos[:, Y] - goal_pos[:, Y]) * agent_vel[:, Y]
-                + agent_vel[:, Y] ** 2
+            (agent_pos[:, X] - goal_pos[:, X]) ** 2
+            + 0.5 * (agent_pos[:, X] - goal_pos[:, X]) * agent_vel[:, X]
+            + agent_vel[:, X] ** 2
+            + (agent_pos[:, Y] - goal_pos[:, Y]) ** 2
+            + 0.5 * (agent_pos[:, Y] - goal_pos[:, Y]) * agent_vel[:, Y]
+            + agent_vel[:, Y] ** 2
         )
 
         LfV_val = (2 * (agent_pos[:, X] - goal_pos[:, X]) + agent_vel[:, X]) * (
             agent_vel[:, X]
         ) + (2 * (agent_pos[:, Y] - goal_pos[:, Y]) + agent_vel[:, Y]) * (
-                      agent_vel[:, Y]
-                  )
+            agent_vel[:, Y]
+        )
         LgV_vals = torch.stack(
             [
                 0.5 * (agent_pos[:, X] - goal_pos[:, X]) + 2 * agent_vel[:, X],
@@ -367,7 +378,7 @@ class HeuristicPolicy(BaseHeuristicPolicy):
         constraints = []
 
         # QP Cost F = u^T @ u + clf_slack**2
-        qp_objective = cp.Minimize(cp.sum_squares(u) + self.clf_slack * clf_slack ** 2)
+        qp_objective = cp.Minimize(cp.sum_squares(u) + self.clf_slack * clf_slack**2)
 
         # control bounds between u_range
         constraints += [u <= u_range]

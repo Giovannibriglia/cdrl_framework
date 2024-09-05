@@ -22,7 +22,7 @@ from causality_vmas.utils import values_to_bins, get_numeric_part, get_Clusterin
     get_DegreeDistributionSimilarity, get_FrobeniusNorm, get_JaccardSimilarity, get_StructuralInterventionDistance, \
     get_StructuralHammingDistance, get_MeanAbsoluteError, get_MeanSquaredError, get_RootMeanSquaredError, \
     get_MedianAbsoluteError, list_to_graph, get_fully_connected_graph, get_empty_graph, process_singularities, \
-    _create_intervals
+    _create_intervals, constraints_causal_graph, markov_blanket
 
 logging.basicConfig(level=logging.INFO, format='%(processName)s - %(message)s')
 
@@ -54,6 +54,9 @@ class BestApprox:
                         raise e
             else:
                 raise ValueError('the target variable provided is not supported')
+
+            self.G_target = constraints_causal_graph(self.G_target)
+            self.G_target = markov_blanket(self.G_target, 'agent_0_reward')
 
             self.empty_graph = get_empty_graph(self.G_target)
             self.full_connected_graph = get_fully_connected_graph(self.G_target)
@@ -90,6 +93,8 @@ class BestApprox:
     def _setup_causality_distance_metrics(self):
 
         def _rescale_from_0_to_1(value, max_value, min_value):
+            if min_value == max_value:
+                return 0
             return (value - min_value) / (max_value - min_value)
 
         def compute_rescaled_shd(G_target, G_pred):
@@ -289,8 +294,9 @@ class BestApprox:
         best_conf = {'index': -1, 'best_params': {}, 'best_average_metrics': 0}
 
         for n, values in self.df_metrics.iterrows():
-            avg_metric = sum(values[f'mean_{category}_metric'] for category in self.dict_metrics) / len(
-                self.dict_metrics)
+            avg_metric = 1
+            for category in self.dict_metrics:
+                avg_metric *= values[f'mean_{category}_metric']
 
             if avg_metric > best_conf['best_average_metrics']:
                 best_conf['index'] = n

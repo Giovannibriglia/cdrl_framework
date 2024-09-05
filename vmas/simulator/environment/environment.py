@@ -1,16 +1,16 @@
 #  Copyright (c) 2022-2024.
 #  ProrokLab (https://www.proroklab.org/)
 #  All rights reserved.
+import math
 import random
 from ctypes import byref
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
-from vmas.simulator.utils import Color
+
 import numpy as np
 import torch
 from gym import spaces
 from torch import Tensor
-from vmas.simulator import rendering
-from vmas.simulator.rendering import Line
+
 import vmas.simulator.utils
 from vmas.simulator.core import Agent, TorchVectorizedObject
 from vmas.simulator.scenario import BaseScenario
@@ -65,12 +65,12 @@ class Environment(TorchVectorizedObject):
         self.clamp_action = clamp_actions
         self.grad_enabled = grad_enabled
 
-        self.reset(seed=seed)
+        observations = self.reset(seed=seed)
 
         # configure spaces
         self.multidiscrete_actions = multidiscrete_actions
         self.action_space = self.get_action_space()
-        self.observation_space = self.get_observation_space()
+        self.observation_space = self.get_observation_space(observations)
 
         # rendering
         self.viewer = None
@@ -255,7 +255,9 @@ class Environment(TorchVectorizedObject):
             self.scenario.env_process_action(agent)
 
         # advance world state
+        self.scenario.pre_step()
         self.world.step()
+        self.scenario.post_step()
 
         self.steps += 1
         obs, rewards, dones, infos = self.get_from_scenario(
@@ -286,21 +288,19 @@ class Environment(TorchVectorizedObject):
                 }
             )
 
-    def get_observation_space(self):
+    def get_observation_space(self, observations: Union[List, Dict]):
         if not self.dict_spaces:
             return spaces.Tuple(
                 [
-                    self.get_agent_observation_space(
-                        agent, self.scenario.observation(agent)
-                    )
-                    for agent in self.agents
+                    self.get_agent_observation_space(agent, observations[i])
+                    for i, agent in enumerate(self.agents)
                 ]
             )
         else:
             return spaces.Dict(
                 {
                     agent.name: self.get_agent_observation_space(
-                        agent, self.scenario.observation(agent)
+                        agent, observations[agent.name]
                     )
                     for agent in self.agents
                 }
@@ -335,13 +335,13 @@ class Environment(TorchVectorizedObject):
                 dtype=np.float32,
             )
         elif self.multidiscrete_actions:
-            actions = [3] * agent.action_size + (
+            actions = agent.discrete_action_nvec + (
                 [self.world.dim_c] if not agent.silent and self.world.dim_c != 0 else []
             )
             return spaces.MultiDiscrete(actions)
         else:
             return spaces.Discrete(
-                3**agent.action_size
+                math.prod(agent.discrete_action_nvec)
                 * (
                     self.world.dim_c
                     if not agent.silent and self.world.dim_c != 0
@@ -407,12 +407,25 @@ class Environment(TorchVectorizedObject):
                     )
             action = torch.stack(actions, dim=-1)
         else:
-            action = torch.randint(
-                low=0,
-                high=self.get_agent_action_space(agent).n,
-                size=(agent.batch_dim,),
-                device=agent.device,
-            )
+            action_space = self.get_agent_action_space(agent)
+            if self.multidiscrete_actions:
+                actions = [
+                    torch.randint(
+                        low=0,
+                        high=action_space.nvec[action_index],
+                        size=(agent.batch_dim,),
+                        device=agent.device,
+                    )
+                    for action_index in range(action_space.shape[0])
+                ]
+                action = torch.stack(actions, dim=-1)
+            else:
+                action = torch.randint(
+                    low=0,
+                    high=action_space.n,
+                    size=(agent.batch_dim,),
+                    device=agent.device,
+                )
         return action
 
     def get_random_actions(self) -> Sequence[torch.Tensor]:
@@ -491,41 +504,49 @@ class Environment(TorchVectorizedObject):
             if not self.multidiscrete_actions:
                 # This bit of code translates the discrete action (taken from a space that
                 # is the cartesian product of all action spaces) into a multi discrete action.
-                # For example, if agent.action_size=4, it will mean that the agent will have
-                # 4 actions each with 3 possibilities (stay, decrement, increment).
-                # The env will have a space Discrete(3**4).
-                # This code will translate the action (with shape [n_envs,1] and range [0,3**4)) to an
-                # action with shape [n_envs,4] and range [0,3).
-                n_actions = self.get_agent_action_space(agent).n
-                action_range = torch.arange(n_actions, device=self.device).expand(
-                    self.world.batch_dim, n_actions
+                # This is done by iteratively taking the modulo of the action and dividing by the
+                # number of actions in the current action space, which treats the action as if
+                # it was the "flat index" of the multi-discrete actions. E.g. if we have
+                # nvec = [3,2], action 0 corresponds to the actions [0,0],
+                # action 1 corresponds to the action [0,1], action 2 corresponds
+                # to the action [1,0], action 3 corresponds to the action [1,1], etc.
+                flat_action = action.squeeze(-1)
+                actions = []
+                nvec = list(agent.discrete_action_nvec) + (
+                    [self.world.dim_c]
+                    if not agent.silent and self.world.dim_c != 0
+                    else []
                 )
-                physical_action = action
-                action_range = torch.where(action_range == physical_action, 1.0, 0.0)
-                action_range = action_range.view(
-                    (self.world.batch_dim,)
-                    + (3,) * agent.action_size
-                    + (self.world.dim_c,)
-                    * (1 if not agent.silent and self.world.dim_c != 0 else 0)
-                )
-                action = action_range.nonzero()[:, 1:]
+                for i in range(len(nvec)):
+                    n = math.prod(nvec[i + 1 :])
+                    actions.append(flat_action // n)
+                    flat_action = flat_action % n
+                action = torch.stack(actions, dim=-1)
 
             # Now we have an action with shape [n_envs, action_size+comms_actions]
-            for _ in range(agent.action_size):
-                physical_action = action[:, action_index].unsqueeze(-1)
+            for n in agent.discrete_action_nvec:
+                physical_action = action[:, action_index]
                 self._check_discrete_action(
-                    physical_action,
+                    physical_action.unsqueeze(-1),
                     low=0,
-                    high=3,
+                    high=n,
                     type="physical",
                 )
-
-                arr1 = physical_action == 1
-                arr2 = physical_action == 2
-
-                disc_action_value = agent.action.u_range_tensor[action_index]
-                agent.action.u[:, action_index] -= disc_action_value * arr1.squeeze(-1)
-                agent.action.u[:, action_index] += disc_action_value * arr2.squeeze(-1)
+                u_max = agent.action.u_range_tensor[action_index]
+                # For odd n we want the first action to always map to u=0, so
+                # we swap 0 values with the middle value, and shift the first
+                # half of the remaining values by -1.
+                if n % 2 != 0:
+                    stay = physical_action == 0
+                    decrement = (physical_action > 0) & (physical_action <= n // 2)
+                    physical_action[stay] = n // 2
+                    physical_action[decrement] -= 1
+                # We know u must be in [-u_max, u_max], and we know action is
+                # in [0, n-1]. Conversion steps: [0, n-1] -> [0, 1] -> [0, 2*u_max] -> [-u_max, u_max]
+                # E.g. action 0 -> -u_max, action n-1 -> u_max, action 1 -> -u_max + 2*u_max/(n-1)
+                agent.action.u[:, action_index] = (physical_action / (n - 1)) * (
+                    2 * u_max
+                ) - u_max
 
                 action_index += 1
 
@@ -718,36 +739,10 @@ class Environment(TorchVectorizedObject):
                 pos[Y] - cam_range[Y],
                 pos[Y] + cam_range[Y],
             )
-        " ************************************************************************************************************ "
-        if self.world.x_semidim is not None and self.world.y_semidim is not None:
-            # ger agent radius
-            radius = self.agents[0].shape.radius
 
-            # get the origin and dimensions
-            origin_x, origin_y = self.scenario.render_origin[X], self.scenario.render_origin[Y]
-            x_semi, y_semi = self.world.x_semidim + radius, self.world.y_semidim + radius
+        # Render
+        self.plot_boundary()
 
-            # define the corner points
-            corners = [
-                (origin_x - x_semi, origin_y + y_semi),  # top_left
-                (origin_x + x_semi, origin_y + y_semi),  # top_right
-                (origin_x + x_semi, origin_y - y_semi),  # bottom_right
-                (origin_x - x_semi, origin_y - y_semi)  # bottom_left
-            ]
-
-            # color and transform
-            color = Color.BLACK.value
-            xform = rendering.Transform()
-
-            # Create lines between the corners
-            for i in range(len(corners)):
-                start = corners[i]
-                end = corners[(i + 1) % len(corners)]  # Connects last point to the first
-                line = Line(start, end, width=1)
-                line.add_attr(xform)
-                line.set_color(*color)
-                self.viewer.add_geom(line)
-        " ************************************************************************************************************ "
         self._set_agent_comm_messages(env_index)
 
         if plot_position_function is not None:
@@ -777,6 +772,50 @@ class Environment(TorchVectorizedObject):
         # render to display or array
         return self.viewer.render(return_rgb_array=mode == "rgb_array")
 
+    def plot_boundary(self):
+        # Include boundaries in the rendering
+        from vmas.simulator import rendering
+        from vmas.simulator.rendering import Line
+        from vmas.simulator.utils import Color
+
+        # Check if the world dimensions are defined
+        if self.world.x_semidim is not None or self.world.y_semidim is not None:
+            # Get the radius of the agents
+            radius = self.agents[0].shape.radius
+
+            # Get the origin coordinates and dimensions for rendering
+            origin_x, origin_y = (0, 0)
+
+            # Extend the dimensions to account for the agent's radius
+            x_semi, y_semi = (
+                self.world.x_semidim + radius,
+                self.world.y_semidim + radius,
+            )
+
+            # Define the corner points of the boundary
+            corners = [
+                (origin_x - x_semi, origin_y + y_semi),  # top_left
+                (origin_x + x_semi, origin_y + y_semi),  # top_right
+                (origin_x + x_semi, origin_y - y_semi),  # bottom_right
+                (origin_x - x_semi, origin_y - y_semi),  # bottom_left
+            ]
+
+            # Set the color for the boundary lines
+            color = Color.BLACK.value
+            # Initialize a transformation
+            xform = rendering.Transform()
+
+            # Create lines to form the boundary by connecting each corner to the next
+            for i in range(len(corners)):
+                start = corners[i]  # Current corner point
+                end = corners[
+                    (i + 1) % len(corners)
+                ]  # Next corner point, wraps around to the first point
+                line = Line(start, end, width=1)  # Create a line between two corners
+                line.add_attr(xform)  # Apply transformation to the line
+                line.set_color(*color)  # Set the line color
+                self.viewer.add_geom(line)  # Add the line to the viewer for rendering
+
     def plot_function(
         self, f, precision, plot_range, cmap_range, cmap_alpha, cmap_name
     ):
@@ -785,7 +824,6 @@ class Environment(TorchVectorizedObject):
         if plot_range is None:
             assert self.viewer.bounds is not None, "Set viewer bounds before plotting"
             x_min, x_max, y_min, y_max = self.viewer.bounds.tolist()
-
             plot_range = [x_min - precision, x_max - precision], [
                 y_min - precision,
                 y_max + precision,
@@ -803,7 +841,9 @@ class Environment(TorchVectorizedObject):
 
     def _init_rendering(self):
         from vmas.simulator import rendering
-        self.viewer = rendering.Viewer(*self.scenario.viewer_size, visible=self.visible_display
+
+        self.viewer = rendering.Viewer(
+            *self.scenario.viewer_size, visible=self.visible_display
         )
 
         self.text_lines = []

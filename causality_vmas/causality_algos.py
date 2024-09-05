@@ -17,8 +17,7 @@ from pgmpy.models.BayesianNetwork import BayesianNetwork
 from tqdm import tqdm
 
 from causality_vmas import LABEL_reward_action_values, LABEL_discrete_intervals, LABEL_grouped_features
-from causality_vmas.utils import dict_to_bn, get_process_and_threads, check_values_in_states, \
-    concat_and_cleanup_parquet_files, get_df_size
+from causality_vmas.utils import dict_to_bn, get_process_and_threads, check_values_in_states, get_df_size
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pgmpy.factors.discrete")
 
@@ -408,13 +407,12 @@ class CausalInferenceForRL:
 
         return reward_action_values
 
-
     def _process_combination(self, combination: Dict) -> Dict:
         # initial_time = time.time()
         try:
             reward_action_values = self._single_query(combination)
         except Exception as e:
-            raise ValueError(e)
+            raise e
 
         return reward_action_values
 
@@ -427,7 +425,7 @@ class CausalInferenceForRL:
 
     def _update_causal_table_chunk(self, chunk: pd.DataFrame, show_progress: bool, parallel: bool) -> pd.DataFrame:
         rows_as_tuples = chunk.to_dict(orient='records')
-
+        print(chunk)
         if parallel:
             with Pool(self.n_processes) as pool:
                 if show_progress:
@@ -449,18 +447,12 @@ class CausalInferenceForRL:
         ]
         return chunk
 
-    def _process_chunk(self, chunk: List, show_progress: bool, parallel: bool, path_save:str, n:int=-1):
+    def _process_chunk(self, chunk: List, show_progress: bool, parallel: bool) -> pd.DataFrame:
         df_chunk = self._create_dataframe_chunk(chunk, show_progress)
         df_chunk = self._update_causal_table_chunk(df_chunk, show_progress, parallel)
-        if n != -1:
-            df_chunk.to_parquet(f'{path_save}/ct_{n}.parquet')
-        else:
-            df_chunk.to_parquet(f'{path_save}/causal_table.parquet')
-        get_df_size(df_chunk)
-        del chunk
-        del df_chunk
+        return df_chunk
 
-    def create_causal_table(self, show_progress: bool = True, parallel: bool = True, path_save_ct: str='.'):
+    def create_causal_table(self, show_progress: bool = True, parallel: bool = True):
         model = self.ci.return_cbn()
 
         variables = model.nodes()
@@ -480,13 +472,6 @@ class CausalInferenceForRL:
 
         del all_combinations
 
-        if len(combinations_dicts) > 500000:
-            chunk_size = 500000
+        return self._process_chunk(combinations_dicts, show_progress, parallel)
 
-            chunks = [combinations_dicts[i:i + chunk_size] for i in range(0, len(combinations_dicts), chunk_size)]
-            del combinations_dicts
 
-            for n, chunk in enumerate(chunks):
-                self._process_chunk(chunk, show_progress, parallel, path_save_ct, n)
-        else:
-            self._process_chunk(combinations_dicts, show_progress, parallel, path_save_ct)

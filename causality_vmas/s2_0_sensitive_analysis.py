@@ -31,12 +31,16 @@ class SensitiveAnalysis:
         grouped_features = single_dict_approx[LABEL_grouped_features]
 
         kwargs = {LABEL_target_feature_analysis: self.target_feature,
-                  LABEL_grouped_features: grouped_features}
+                  LABEL_grouped_features: grouped_features,
+                  'n_test_samples': int(params_approximation['n_rows'])}
 
         save_file_incrementally(df_approx, self.dir_save, 'df_', 'pkl')
-
-        ciq = CausalityInformativenessQuantification(self.task_name, df_approx, self.df_original, **kwargs)
-        dict_scores, causal_graph, dict_bn_info = ciq.evaluate()
+        try:
+            ciq = CausalityInformativenessQuantification(self.task_name, df_approx, self.df_original, **kwargs)
+            dict_scores, causal_graph, dict_bn_info = ciq.evaluate()
+        except Exception as e:
+            print(df_approx.columns)
+            raise e
 
         if not (dict_scores is None or causal_graph is None or dict_bn_info is None):
             logging.info(f'Results computed for {params_approximation} approximation')
@@ -55,7 +59,6 @@ class SensitiveAnalysis:
                                       LABEL_ciq_scores: dict_scores}
             save_json_incrementally(dict_scores_evaluation, self.dir_save, 'scores_')
 
-            logging.info(f'Results saved for {params_approximation} approximation')
         else:
             logging.error(f'No items to save')
 

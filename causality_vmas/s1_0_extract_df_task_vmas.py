@@ -57,7 +57,9 @@ class VMASExperiment:
 
         self.list_story = []
 
-        observation_space = self.env.get_observation_space()
+        reset_obs = self.env.reset(seed=self.seed)
+
+        observation_space = self.env.get_observation_space(reset_obs)
         n_features = observation_space['agent_0'].shape[0]
 
         self.last_obs = None if self.mdp else {f'agent_{i}': [[0] * n_features] * self.n_envs for i in
