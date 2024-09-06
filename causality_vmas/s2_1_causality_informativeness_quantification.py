@@ -127,6 +127,9 @@ class CausalityInformativenessQuantification:
             logging.error(f'Causal discovery error: {e}')
             return self.dict_scores, self.causal_graph, self.dict_bn
 
+        if len(self.causal_graph.nodes) == 2:
+            return self.dict_scores, self.causal_graph, self.dict_bn
+
         # try:
         self.ci_assessment(show_progress=True)
         """except Exception as e:
