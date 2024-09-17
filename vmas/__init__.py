@@ -28,7 +28,7 @@ scenarios = sorted(
         "reverse_transport",
         "give_way",
         "wheel",
-        "balance",
+        "best",
         "football",
         "discovery",
         "flocking",

@@ -425,7 +425,7 @@ class CausalInferenceForRL:
 
     def _update_causal_table_chunk(self, chunk: pd.DataFrame, show_progress: bool, parallel: bool) -> pd.DataFrame:
         rows_as_tuples = chunk.to_dict(orient='records')
-        print(chunk)
+
         if parallel:
             with Pool(self.n_processes) as pool:
                 if show_progress:
@@ -459,7 +459,7 @@ class CausalInferenceForRL:
         excluded_variables = {"agent_0_reward", "agent_0_action_0", "agent_0_action_1"}
         state_names = {variable: model.get_cpds(variable).state_names[variable] for variable in variables if
                        variable not in excluded_variables}
-
+        print(state_names)
         all_combinations = list(itertools.product(*state_names.values()))
         total_combinations = len(all_combinations)
 

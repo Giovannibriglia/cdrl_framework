@@ -20,7 +20,7 @@ from ray.tune.integration.wandb import WandbLoggerCallback
 from vmas import make_env
 from vmas.simulator.environment import Wrapper
 
-scenario_name = "balance"
+scenario_name = "best"
 
 # Scenario specific variables.
 # When modifying this also modify env_config and env_creator

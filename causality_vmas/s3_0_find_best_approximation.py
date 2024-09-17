@@ -352,4 +352,4 @@ def main(task):
 
 
 if __name__ == '__main__':
-    main('balance')
+    main('best')

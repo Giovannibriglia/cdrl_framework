@@ -130,10 +130,7 @@ class CausalityInformativenessQuantification:
         if len(self.causal_graph.nodes) == 2:
             return self.dict_scores, self.causal_graph, self.dict_bn
 
-        # try:
         self.ci_assessment(show_progress=True)
-        """except Exception as e:
-            logging.error(f'Causal inference assessment failed: {e}')"""
 
         return self.dict_scores, self.causal_graph, self.dict_bn
 

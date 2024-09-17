@@ -637,9 +637,9 @@ def _balance_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
                             LABEL_kind_group_var in s or
                             'action' in s]
 
-    df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize_these)
+    new_df, discrete_intervals = discretize_dataframe(df, n_bins, not_discretize_these=not_discretize_these)
 
-    new_df = df.loc[:n_rows - 1, :]
+    new_df = new_df.loc[:n_rows - 1, :]
 
     map(lambda col: check_discretization(new_df, col, n_bins, not_discretize_these), new_df.columns.to_list())
 
@@ -647,6 +647,7 @@ def _balance_approximation(input_elements: Tuple[pd.DataFrame, Dict]) -> Dict:
                    LABEL_discrete_intervals: discrete_intervals,
                    LABEL_dataframe_approximated: new_df,
                    LABEL_grouped_features: (0, [])}
+
     return approx_dict
 
 
@@ -694,7 +695,7 @@ def inverse_approximation_function(task: str):
     elif task == 'dropout':
         return _dropout_inverse_approximation
     elif task == 'wheel':
-        return _dropout_inverse_approximation
+        raise NotImplementedError('not implemented yet')
     else:
         raise NotImplementedError("The inverse approximation function for this task has not been implemented")
 
