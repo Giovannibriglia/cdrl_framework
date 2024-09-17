@@ -1286,7 +1286,7 @@ def get_process_and_threads() -> Tuple[int, int]:
     percent = 0.75
 
     n_threads = int(max_threads * percent)
-    n_processes = int(max_processes * percent)
+    n_processes = 5 # int(max_processes * percent)
 
     return n_threads, n_processes
 
