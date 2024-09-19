@@ -186,7 +186,7 @@ class BestApprox:
         metrics_list = []
 
         self._setup_binary_metrics()
-        if self.G_target is not None and self.G_target is not nx.DiGraph():
+        if self.G_target is not None and self.G_target.number_of_edges() > 0 and self.G_target.number_of_nodes() > 0:
             self._setup_causality_distance_metrics()
             self._setup_causality_similarity_metrics()
 
@@ -228,7 +228,7 @@ class BestApprox:
                 binary_metrics = {key: 0 for key in self.dict_metrics[LABEL_binary_metrics]}
                 distance_metrics = {key: 0 for key in self.dict_metrics[LABEL_distance_metrics]}
 
-            if self.G_target is not None and self.G_target is not nx.DiGraph():
+            if self.G_target is not None and self.G_target.number_of_edges() > 0 and self.G_target.number_of_nodes() > 0:
                 with open(f'{self.path_results}/causal_graph_{index_res}.json', 'r') as file:
                     list_causal_graph = json.load(file)
                 causal_graph = list_to_graph(list_causal_graph)
