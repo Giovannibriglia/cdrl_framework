@@ -59,7 +59,7 @@ class BestApprox:
             self.G_target = markov_blanket(self.G_target, 'agent_0_reward')
 
             self.empty_graph = get_empty_graph(self.G_target)
-            self.full_connected_graph = get_fully_connected_graph(self.G_target)
+            self.fully_connected_graph = get_fully_connected_graph(self.G_target)
 
         else:
             self.G_target = None
@@ -110,15 +110,15 @@ class BestApprox:
             return 1 - _rescale_from_0_to_1(frob_norm_value, max_frob_norm, min_frob_norm)
 
         min_shd = 0
-        max_shd = get_StructuralHammingDistance(self.G_target, self.full_connected_graph)
+        max_shd = get_StructuralHammingDistance(self.G_target, self.fully_connected_graph)
         # print('SHD: ', max_shd, min_shd)
 
         min_sid = 0
-        max_sid = get_StructuralInterventionDistance(self.G_target, self.full_connected_graph)
+        max_sid = get_StructuralInterventionDistance(self.G_target, self.fully_connected_graph)
         # print('SID: ', max_sid, min_sid)
 
         min_frob_norm = 0
-        max_frob_norm = get_FrobeniusNorm(self.G_target, self.full_connected_graph)
+        max_frob_norm = get_FrobeniusNorm(self.G_target, self.fully_connected_graph)
         # print('FROB: ', max_frob_norm, min_frob_norm)
 
         metrics = {
@@ -166,7 +166,7 @@ class BestApprox:
     def _compute_causality_distance_metrics(self, G_pred: nx.DiGraph):
         metrics = {}
         for metric_name, metric_computation in self.dict_metrics[LABEL_causal_graph_distance_metrics].items():
-            if G_pred is not nx.DiGraph():
+            if G_pred.number_of_edges() > 0 and G_pred.number_of_nodes() > 0:
                 metrics[metric_name] = metric_computation(self.G_target, G_pred)
             else:
                 metrics[metric_name] = 0
@@ -175,7 +175,7 @@ class BestApprox:
     def _compute_causality_similarity_metrics(self, G_pred: nx.DiGraph):
         metrics = {}
         for metric_name, metric_computation in self.dict_metrics[LABEL_causal_graph_similarity_metrics].items():
-            if G_pred is not nx.DiGraph():
+            if G_pred.number_of_edges() > 0 and G_pred.number_of_nodes() > 0:
                 metrics[metric_name] = metric_computation(self.G_target, G_pred)
             else:
                 metrics[metric_name] = 0
@@ -186,7 +186,7 @@ class BestApprox:
         metrics_list = []
 
         self._setup_binary_metrics()
-        if self.G_target is not None:
+        if self.G_target is not None and self.G_target is not nx.DiGraph():
             self._setup_causality_distance_metrics()
             self._setup_causality_similarity_metrics()
 
@@ -228,7 +228,7 @@ class BestApprox:
                 binary_metrics = {key: 0 for key in self.dict_metrics[LABEL_binary_metrics]}
                 distance_metrics = {key: 0 for key in self.dict_metrics[LABEL_distance_metrics]}
 
-            if self.G_target is not None:
+            if self.G_target is not None and self.G_target is not nx.DiGraph():
                 with open(f'{self.path_results}/causal_graph_{index_res}.json', 'r') as file:
                     list_causal_graph = json.load(file)
                 causal_graph = list_to_graph(list_causal_graph)
