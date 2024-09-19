@@ -294,14 +294,21 @@ class BestApprox:
         best_conf = {'index': -1, 'best_params': {}, 'best_average_metrics': 0}
 
         for n, values in self.df_metrics.iterrows():
-            avg_metric = 1
-            for category in self.dict_metrics:
-                avg_metric *= values[f'mean_{category}_metric']
+            with open(f'causal_graph_{n}.json') as f:
+                causal_graph_list = json.load(f)
+            causal_graph = list_to_graph(causal_graph_list)
+            with open(f'bn_params_{n}.json') as f:
+                bn_params = json.load(f)
 
-            if avg_metric > best_conf['best_average_metrics']:
-                best_conf['index'] = n
-                best_conf['best_params'] = values
-                best_conf['best_average_metrics'] = avg_metric
+            if causal_graph is not nx.DiGraph() and bn_params is not {}:
+                avg_metric = 1
+                for category in self.dict_metrics:
+                    avg_metric *= values[f'mean_{category}_metric']
+
+                if avg_metric > best_conf['best_average_metrics']:
+                    best_conf['index'] = n
+                    best_conf['best_params'] = values
+                    best_conf['best_average_metrics'] = avg_metric
 
         best_index_here = best_conf['index']
         if best_index_here > -1:
