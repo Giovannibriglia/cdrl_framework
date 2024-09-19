@@ -13,20 +13,20 @@ def main(task_name: str):
     task_name = task_name.lower()
     print('Task: ', task_name)
 
-    experiment = VMASExperiment(task_name)
-    df_start, info_task, _ = experiment.run_experiment()
+    """experiment = VMASExperiment(task_name)
+    df_start, info_task, _ = experiment.run_experiment()"""
 
-    """df_start = pd.read_pickle(f'./dataframes/df_{task_name}_pomdp_discrete_actions_0.pkl')
+    df_start = pd.read_pickle(f'./dataframes/df_{task_name}_pomdp_discrete_actions_0.pkl')
     with open(f'./dataframes/info_{task_name}_pomdp_discrete_actions_0.json', 'r') as file:
-        info_task = json.load(file)"""
+        info_task = json.load(file)
 
     agent0_columns = [col for col in df_start.columns if 'agent_0' in col]
     df_start = df_start.loc[:, agent0_columns]
 
-    sensitive_analysis = SensitiveAnalysis(df_start, task_name, info_task)
-    path_results = sensitive_analysis.computing_CIQs()
+    """sensitive_analysis = SensitiveAnalysis(df_start, task_name, info_task)
+    path_results = sensitive_analysis.computing_CIQs()"""
 
-    # path_results  = f'./results_sensitive_analysis_{task_name}'
+    path_results  = f'./results_sensitive_analysis_{task_name}'
 
     best_approx = BestApprox(path_results, df_start)
     best_approx.evaluate()
