@@ -166,13 +166,19 @@ class BestApprox:
     def _compute_causality_distance_metrics(self, G_pred: nx.DiGraph):
         metrics = {}
         for metric_name, metric_computation in self.dict_metrics[LABEL_causal_graph_distance_metrics].items():
-            metrics[metric_name] = metric_computation(self.G_target, G_pred)
+            if G_pred is not nx.DiGraph():
+                metrics[metric_name] = metric_computation(self.G_target, G_pred)
+            else:
+                metrics[metric_name] = 0
         return metrics
 
     def _compute_causality_similarity_metrics(self, G_pred: nx.DiGraph):
         metrics = {}
         for metric_name, metric_computation in self.dict_metrics[LABEL_causal_graph_similarity_metrics].items():
-            metrics[metric_name] = metric_computation(self.G_target, G_pred)
+            if G_pred is not nx.DiGraph():
+                metrics[metric_name] = metric_computation(self.G_target, G_pred)
+            else:
+                metrics[metric_name] = 0
 
         return metrics
 
