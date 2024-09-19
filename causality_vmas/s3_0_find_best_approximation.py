@@ -300,10 +300,10 @@ class BestApprox:
         best_conf = {'index': -1, 'best_params': {}, 'best_average_metrics': 0}
 
         for n, values in self.df_metrics.iterrows():
-            with open(f'causal_graph_{n}.json') as f:
+            with open(f'{self.path_results}/causal_graph_{n}.json') as f:
                 causal_graph_list = json.load(f)
             causal_graph = list_to_graph(causal_graph_list)
-            with open(f'bn_params_{n}.json') as f:
+            with open(f'{self.path_results}/bn_params_{n}.json') as f:
                 bn_params = json.load(f)
 
             if causal_graph is not nx.DiGraph() and bn_params is not {}:
