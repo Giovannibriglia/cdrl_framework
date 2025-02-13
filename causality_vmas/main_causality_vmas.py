@@ -13,7 +13,7 @@ def main(task_name: str):
     task_name = task_name.lower()
     print('Task: ', task_name)
 
-    experiment = VMASExperiment(task_name)
+    experiment = VMASExperiment(task_name, mdp=True)
     df_start, info_task, _ = experiment.run_experiment()
 
     """df_start = pd.read_pickle(f'./dataframes/df_{task_name}_pomdp_discrete_actions_0.pkl')
