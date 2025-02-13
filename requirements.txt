@@ -16,7 +16,7 @@ statsmodels>=0.13
 opt_einsum>=3.3
 xgboost>=2.0.3
 torch
-pyglet
+pyglet~=1.5.27
 six
 scipy
 seaborn
